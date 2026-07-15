@@ -18,6 +18,14 @@ export default function App() {
   const location = useLocation()
 
   useEffect(() => {
+    const db = JSON.parse(localStorage.getItem('sudaDB') || '{}')
+    if (!db.admins || !db.admins.length) {
+      db.admins = [{ id: 'admin001', username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }]
+      localStorage.setItem('sudaDB', JSON.stringify(db))
+    }
+  }, [])
+
+  useEffect(() => {
     const saved = localStorage.getItem('sudaUser')
     if (saved) {
       try {

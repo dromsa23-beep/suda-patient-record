@@ -1,9 +1,20 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
 
 function getDB() {
   try { return JSON.parse(localStorage.getItem('sudaDB') || '{}') } catch { return {} }
+}
+function saveDB(db) { localStorage.setItem('sudaDB', JSON.stringify(db)) }
+
+const defaultAdmin = { id: 'admin001', username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }
+
+function initAdmins() {
+  const db = getDB()
+  if (!db.admins || !db.admins.length) {
+    db.admins = [defaultAdmin]
+    saveDB(db)
+  }
 }
 
 export default function LoginPage({ onLogin, onRegister }) {
@@ -13,6 +24,8 @@ export default function LoginPage({ onLogin, onRegister }) {
   const [error, setError] = useState('')
   const navigate = useNavigate()
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
+
+  useEffect(() => { initAdmins() }, [])
 
   const doLogin = async () => {
     try {
