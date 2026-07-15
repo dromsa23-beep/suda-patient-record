@@ -1,20 +1,6 @@
 import axios from 'axios';
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || '';
-const API = axios.create({ baseURL: BACKEND_URL ? `${BACKEND_URL}/api` : '/api' });
-
-let backendAvailable = null;
-
-async function checkBackend() {
-  if (backendAvailable !== null) return backendAvailable;
-  try {
-    await axios.get(`${BACKEND_URL || ''}/api/app-details`, { timeout: 3000 });
-    backendAvailable = true;
-  } catch {
-    backendAvailable = false;
-  }
-  return backendAvailable;
-}
 
 function getDB() {
   try { return JSON.parse(localStorage.getItem('sudaDB') || '{}') }
@@ -92,33 +78,33 @@ const localStats = {
 };
 
 export const auth = {
-  login: async (data) => (await checkBackend()) ? API.post('/auth/login', data) : localAuth.login(data),
-  register: async (data) => (await checkBackend()) ? API.post('/auth/register', data) : localAuth.register(data),
+  login: localAuth.login,
+  register: localAuth.register,
 };
 
 export const patients = {
-  list: async () => (await checkBackend()) ? API.get('/patients') : localPatients.list(),
-  get: async (id) => (await checkBackend()) ? API.get(`/patients/${id}`) : localPatients.get(id),
-  create: async (data) => (await checkBackend()) ? API.post('/patients', data) : localPatients.create(data),
-  update: async (id, data) => (await checkBackend()) ? API.put(`/patients/${id}`, data) : localPatients.update(id, data),
-  delete: async (id) => (await checkBackend()) ? API.delete(`/patients/${id}`) : localPatients.delete(id),
-  search: async (q) => (await checkBackend()) ? API.get(`/patients/search/${encodeURIComponent(q)}`) : localPatients.search(q),
+  list: localPatients.list,
+  get: localPatients.get,
+  create: localPatients.create,
+  update: localPatients.update,
+  delete: localPatients.delete,
+  search: localPatients.search,
 };
 
 export const clinics = {
-  list: async () => (await checkBackend()) ? API.get('/clinics') : localClinics.list(),
-  create: async (data) => (await checkBackend()) ? API.post('/clinics', data) : localClinics.create(data),
-  delete: async (id) => (await checkBackend()) ? API.delete(`/clinics/${id}`) : localClinics.delete(id),
+  list: localClinics.list,
+  create: localClinics.create,
+  delete: localClinics.delete,
 };
 
 export const surgeries = {
-  list: async () => (await checkBackend()) ? API.get('/surgeries') : localSurgeries.list(),
-  create: async (data) => (await checkBackend()) ? API.post('/surgeries', data) : localSurgeries.create(data),
-  delete: async (id) => (await checkBackend()) ? API.delete(`/surgeries/${id}`) : localSurgeries.delete(id),
+  list: localSurgeries.list,
+  create: localSurgeries.create,
+  delete: localSurgeries.delete,
 };
 
 export const stats = {
-  get: async () => (await checkBackend()) ? API.get('/stats') : localStats.get(),
+  get: localStats.get,
 };
 
-export default API;
+export default null;
