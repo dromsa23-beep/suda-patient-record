@@ -22,6 +22,7 @@ export default function LoginPage({ onLogin, onRegister }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', clinic: '', username: '', password: '', confirm: '', specialty: '' })
   const [creds, setCreds] = useState({ username: '', password: '' })
   const [error, setError] = useState('')
+  const [registered, setRegistered] = useState(false)
   const navigate = useNavigate()
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
 
@@ -46,7 +47,7 @@ export default function LoginPage({ onLogin, onRegister }) {
     try {
       if (form.password !== form.confirm) { setError('كلمة السر غير متطابقة'); return }
       if (form.password.length < 6) { setError('كلمة السر 6 أحرف على الأقل'); return }
-      await onRegister(form); setTab('login'); setError('')
+      await onRegister(form); setRegistered(true); setError('')
     } catch (e) { setError(e.response?.data?.detail || 'خطأ في التسجيل') }
   }
 
@@ -63,7 +64,17 @@ export default function LoginPage({ onLogin, onRegister }) {
           <button onClick={() => { setTab('register'); setError('') }} className={`pill-tab ${tab === 'register' ? 'active' : ''}`} style={{ flex: 1, borderRadius: 8 }}>📝 حساب جديد</button>
         </div>
         {error && <div style={{ background: '#fde8e8', color: 'var(--danger)', padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{error}</div>}
-        {tab === 'login' ? (
+        {registered && <div style={{ background: '#e8fde8', color: 'var(--success)', padding: '12px', borderRadius: 8, marginBottom: 12, fontSize: 13, textAlign: 'center', lineHeight: 1.8 }}>
+          <div style={{ fontSize: 24, marginBottom: 8 }}>✅</div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>تم إرسال بياناتك للإدارة للموافقة عليها</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-2)' }}>يمكنك استخدام التطبيق بعد موافقة الإدارة</div>
+          <div style={{ marginTop: 12, padding: '8px 12px', background: 'white', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 600, fontSize: 12 }}>📞 للاستفسار الاتصال على:</div>
+            <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--royal)', direction: 'ltr', marginTop: 4 }}>00249127320208</div>
+          </div>
+          <button className="btn btn-primary btn-full" onClick={() => { setRegistered(false); setTab('login') }} style={{ marginTop: 12 }}>العودة لتسجيل الدخول</button>
+        </div>}
+        {!registered && tab === 'login' ? (
           <div>
             <div className="form-group"><label>👤 اسم المستخدم</label><input placeholder="اسم المستخدم" value={creds.username} onChange={e => set('username', e.target.value)} /></div>
             <div className="form-group"><label>🔒 كلمة السر</label><input type="password" placeholder="كلمة السر" value={creds.password} onChange={e => set('password', e.target.value)} onKeyDown={e => e.key === 'Enter' && doLogin()} /></div>

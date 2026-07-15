@@ -148,8 +148,28 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     showToast('تم حذف المريض')
   }
 
+  const approveUser = (id) => {
+    const db = getDB()
+    db.users = (db.users || []).map(u => u.id === id ? { ...u, approved: true } : u)
+    saveDB(db)
+    loadData()
+    showToast('تمت الموافقة على المستخدم')
+  }
+
+  const rejectUser = (id) => {
+    if (!confirm('هل تريد رفض هذا الطلب وحذفه؟')) return
+    const db = getDB()
+    db.users = (db.users || []).filter(u => u.id !== id)
+    saveDB(db)
+    loadData()
+    showToast('تم رفض الطلب')
+  }
+
+  const pendingUsers = users.filter(u => u.approved === false).length
+
   const tabs = [
     { k: 'overview', l: '📊 النظرة العامة' },
+    { k: 'approvals', l: `✅ الموافقات${pendingUsers ? ` (${pendingUsers})` : ''}` },
     { k: 'users', l: '👥 المستخدمين' },
     { k: 'patients', l: '🏥 المرضى' },
     { k: 'complaints', l: '📝 الشكاوى' },
@@ -244,6 +264,32 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                 </div>
               ))}
               {!complaints.length && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-3)' }}>لا توجد شكاوى</div>}
+            </div>
+          </div>}
+
+          {tab === 'approvals' && <div>
+            <div className="section">
+              <div className="section-title"><span className="icon">✅</span> طلبات الموافقة ({pendingUsers})</div>
+              {users.filter(u => u.approved === false).map(u => (
+                <div key={u.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="patient-avatar" style={{ background: 'linear-gradient(135deg, var(--gold), var(--gold-light))', color: 'var(--navy)', fontWeight: 700 }}>{u.name?.[0] || '?'}</div>
+                      <div className="patient-info">
+                        <div className="patient-name">{u.name || u.username}</div>
+                        <div className="patient-meta">👤 {u.username} · 🏥 {u.clinic || 'غير محدد'} · 🩺 {u.specialty || 'غير محدد'}</div>
+                        <div className="patient-meta">📧 {u.email || '—'} · 📞 {u.phone || '—'} · 📅 {new Date(u.createdAt).toLocaleDateString('ar')}</div>
+                      </div>
+                    </div>
+                    <span className="tag tag-active" style={{ fontSize: 11, padding: '3px 10px' }}>⏳ في الانتظار</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-accent btn-sm" onClick={() => approveUser(u.id)}>✅ موافقة</button>
+                    <button className="btn btn-sm" style={{ background: 'var(--danger)', color: 'white' }} onClick={() => rejectUser(u.id)}>❌ رفض</button>
+                  </div>
+                </div>
+              ))}
+              {pendingUsers === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)' }}>✅ لا توجد طلبات معلقة</div>}
             </div>
           </div>}
 

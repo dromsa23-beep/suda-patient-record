@@ -15,6 +15,7 @@ const localAuth = {
     const users = db.users || [];
     const user = users.find(u => u.username === data.username && u.password === data.password);
     if (!user) throw { response: { data: { detail: 'اسم المستخدم أو كلمة المرور خاطئة' } } };
+    if (user.approved === false) throw { response: { data: { detail: 'حسابك في انتظار موافقة الإدارة. للاستفسار الاتصال على 00249127320208' } } };
     const { password, ...safe } = user;
     return { data: { user: safe } };
   },
@@ -22,7 +23,7 @@ const localAuth = {
     const db = getDB();
     if (!db.users) db.users = [];
     if (db.users.find(u => u.username === data.username)) throw { response: { data: { detail: 'اسم المستخدم موجود بالفعل' } } };
-    const user = { id: genId(), ...data, createdAt: new Date().toISOString() };
+    const user = { id: genId(), ...data, approved: false, createdAt: new Date().toISOString() };
     db.users.push(user);
     saveDB(db);
     return { data: { message: 'تم التسجيل' } };
