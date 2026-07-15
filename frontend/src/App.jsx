@@ -56,7 +56,6 @@ export default function App() {
             <span className="nav-icon">{n.icon}</span>{n.label}
           </button>
         ))}
-        <button className="nav-item" onClick={() => navigate('/admin')}>⚙️ الإدارة</button>
         <button className="nav-item" style={{ marginRight: 'auto' }} onClick={handleLogout}>🚪 خروج</button>
       </nav>
       <main className="app-content">

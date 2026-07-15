@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
 
+function getDB() {
+  try { return JSON.parse(localStorage.getItem('sudaDB') || '{}') } catch { return {} }
+}
+
 export default function LoginPage({ onLogin, onRegister }) {
   const [tab, setTab] = useState('login')
   const [form, setForm] = useState({ name: '', email: '', phone: '', clinic: '', username: '', password: '', confirm: '', specialty: '' })
@@ -11,7 +15,18 @@ export default function LoginPage({ onLogin, onRegister }) {
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
 
   const doLogin = async () => {
-    try { setError(''); await onLogin(creds.username, creds.password) }
+    try {
+      setError('')
+      const db = getDB()
+      const admins = db.admins || []
+      const isAdmin = admins.find(a => a.username === creds.username && a.password === creds.password)
+      if (isAdmin) {
+        localStorage.setItem('sudaAdmin', JSON.stringify({ username: isAdmin.username, name: isAdmin.name, role: isAdmin.role }))
+        navigate('/admin')
+        return
+      }
+      await onLogin(creds.username, creds.password)
+    }
     catch (e) { setError(e.response?.data?.detail || 'خطأ في البيانات') }
   }
   const doRegister = async () => {
@@ -58,9 +73,6 @@ export default function LoginPage({ onLogin, onRegister }) {
             <button className="btn btn-accent btn-full" onClick={doRegister} style={{ marginTop: 8 }}>✅ إنشاء حساب</button>
           </div>
         )}
-      </div>
-      <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <button onClick={() => navigate('/admin')} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 12 }}>⚙️ لوحة إدارة النظام</button>
       </div>
     </div>
   )
