@@ -190,6 +190,37 @@ function AdminDashboard({ admin, onLogout, onBack }) {
               <div className="stat-card gold"><div className="stat-icon">📝</div><div className="number">{newComplaints}</div><div className="label">شكاوى جديدة</div></div>
             </div>
             <div className="section">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div className="section-title" style={{ marginBottom: 0 }}><span className="icon">⚙️</span> إضافة مشرف جديد</div>
+              </div>
+              <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: 14, border: '1px dashed var(--gold)' }}>
+                <div className="form-row">
+                  <div className="form-group"><label>👤 اسم المستخدم</label><input placeholder="username" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} /></div>
+                  <div className="form-group"><label>🔒 كلمة المرور</label><input type="password" placeholder="password" value={newAdmin.password} onChange={e => setNewAdmin({ ...newAdmin, password: e.target.value })} /></div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group"><label>📝 الاسم الكامل</label><input placeholder="الاسم" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} /></div>
+                  <div className="form-group"><label>🏥 مكان العيادة</label><input placeholder="العيادة" value={newAdmin.clinic} onChange={e => setNewAdmin({ ...newAdmin, clinic: e.target.value })} /></div>
+                </div>
+                <button className="btn btn-primary btn-full" onClick={addAdmin} style={{ marginTop: 4 }}>➕ إضافة مشرف</button>
+              </div>
+            </div>
+            <div className="section">
+              <div className="section-title"><span className="icon">⚙️</span> المشرفين الحاليين</div>
+              {admins.map(a => (
+                <div key={a.id} className="patient-item">
+                  <div className="patient-avatar" style={{ background: a.role === 'superadmin' ? 'linear-gradient(135deg, var(--gold), var(--gold-light))' : 'linear-gradient(135deg, var(--royal), var(--med-blue))' }}>
+                    {a.role === 'superadmin' ? '👑' : '⚙️'}
+                  </div>
+                  <div className="patient-info">
+                    <div className="patient-name">{a.name} {a.role === 'superadmin' && <span style={{ fontSize: 10, background: 'var(--gold)', color: 'var(--navy)', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>مدير عام</span>}</div>
+                    <div className="patient-meta">👤 {a.username} · 🔑 {a.password} · 🏥 {a.clinic || 'غير محدد'}</div>
+                  </div>
+                  {a.id !== 'admin001' && <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>}
+                </div>
+              ))}
+            </div>
+            <div className="section">
               <div className="section-title"><span className="icon">👥</span> آخر المستخدمين المسجلين</div>
               {users.slice(-5).reverse().map(u => (
                 <div key={u.id} className="patient-item">
