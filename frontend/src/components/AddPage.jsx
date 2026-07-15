@@ -4,7 +4,7 @@ import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
 import { EditAccordion, EditableRow, Lightbox, ImageGrid } from './shared'
 
-export default function AddPage() {
+export default function AddPage({ user }) {
   const navigate = useNavigate()
   const { id } = useParams()
   const [f, setF] = useState({ ...emptyPatient })
@@ -65,7 +65,7 @@ export default function AddPage() {
 
   const save = async () => {
     try {
-      const data = { ...f }
+      const data = { ...f, createdBy: user?.username || 'unknown' }
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
       if (id) { await patientsApi.update(id, data); alert('تم التحديث'); navigate(-1) }
       else { await patientsApi.create(data); alert('تم الحفظ'); navigate('/search') }

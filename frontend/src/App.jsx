@@ -18,14 +18,6 @@ export default function App() {
   const location = useLocation()
 
   useEffect(() => {
-    const db = JSON.parse(localStorage.getItem('sudaDB') || '{}')
-    if (!db.admins || !db.admins.length) {
-      db.admins = [{ id: 'admin001', username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }]
-      localStorage.setItem('sudaDB', JSON.stringify(db))
-    }
-  }, [])
-
-  useEffect(() => {
     const saved = localStorage.getItem('sudaUser')
     if (saved) {
       try {
@@ -68,14 +60,14 @@ export default function App() {
       </nav>
       <main className="app-content">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/add" element={<AddPage />} />
-          <Route path="/add/:id" element={<AddPage />} />
-          <Route path="/details/:id" element={<DetailsPage />} />
-          <Route path="/surgery" element={<SurgeryPage />} />
-          <Route path="/clinic" element={<ClinicPage />} />
-          <Route path="/stats" element={<StatsPage />} />
+          <Route path="/" element={<HomePage user={user} />} />
+          <Route path="/search" element={<SearchPage user={user} />} />
+          <Route path="/add" element={<AddPage user={user} />} />
+          <Route path="/add/:id" element={<AddPage user={user} />} />
+          <Route path="/details/:id" element={<DetailsPage user={user} />} />
+          <Route path="/surgery" element={<SurgeryPage user={user} />} />
+          <Route path="/clinic" element={<ClinicPage user={user} />} />
+          <Route path="/stats" element={<StatsPage user={user} />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage onLogin={handleLogin} onRegister={handleRegister} />} />
         </Routes>

@@ -1,9 +1,32 @@
 import { useState, useEffect } from 'react'
-import { stats as statsApi } from '../api'
+import { patients as patientsApi } from '../api'
 
-export default function StatsPage() {
+export default function StatsPage({ user }) {
   const [s, setS] = useState(null)
-  useEffect(() => { statsApi.get().then(r => setS(r.data)).catch(() => { }) }, [])
+  useEffect(() => {
+    patientsApi.list().then(r => {
+      const all = r.data || []
+      const filtered = user?.isAdmin ? all : all.filter(p => p.createdBy === user?.username)
+      const ages = filtered.map(p => parseInt(p.age) || 0).filter(a => a > 0)
+      const diseases = {}
+      const exams = {}
+      filtered.forEach(p => {
+        (p.records || []).forEach(r => {
+          if (r.primaryDx) diseases[r.primaryDx] = (diseases[r.primaryDx] || 0) + 1
+          if (r.investigations) exams[r.investigations] = (exams[r.investigations] || 0) + 1
+        });
+        (p.diseases || []).forEach(d => { if (d.name) diseases[d.name] = (diseases[d.name] || 0) + 1 })
+      })
+      setS({
+        total: filtered.length,
+        avgAge: ages.length ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : 0,
+        male: filtered.filter(p => p.gender === 'ذكر').length,
+        female: filtered.filter(p => p.gender === 'أنثى').length,
+        topDiseases: Object.entries(diseases).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })),
+        topExams: Object.entries(exams).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })),
+      })
+    }).catch(() => { })
+  }, [user])
   if (!s) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)' }} className="pulse-loading">جاري التحميل...</div>
   return (
     <div>

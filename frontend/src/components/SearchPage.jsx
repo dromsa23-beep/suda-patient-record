@@ -3,13 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { EmptyState } from './shared'
 
-export default function SearchPage() {
+export default function SearchPage({ user }) {
   const [query, setQuery] = useState('')
   const [list, setList] = useState([])
   const navigate = useNavigate()
   const doSearch = useCallback(async () => {
-    try { const r = query ? await patientsApi.search(query) : await patientsApi.list(); setList(r.data) } catch (e) { }
-  }, [query])
+    try {
+      const r = query ? await patientsApi.search(query) : await patientsApi.list()
+      const all = r.data || []
+      const filtered = user?.isAdmin ? all : all.filter(p => p.createdBy === user?.username)
+      setList(filtered)
+    } catch (e) { }
+  }, [query, user])
   useEffect(() => { doSearch() }, [])
   useEffect(() => { const t = setTimeout(doSearch, 300); return () => clearTimeout(t) }, [query])
   const getInitials = (name) => name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'
