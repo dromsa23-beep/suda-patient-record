@@ -9,6 +9,7 @@ import DetailsPage from './components/DetailsPage'
 import SurgeryPage from './components/SurgeryPage'
 import ClinicPage from './components/ClinicPage'
 import StatsPage from './components/StatsPage'
+import AdminPage from './components/AdminPage'
 import { navItems } from './constants'
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
   const handleLogout = () => { localStorage.removeItem('sudaUser'); setUser(null); navigate('/login') }
 
   if (!user) return <Routes>
+    <Route path="/admin" element={<AdminPage />} />
     <Route path="*" element={<LoginPage onLogin={handleLogin} onRegister={handleRegister} />} />
   </Routes>
 
@@ -54,6 +56,7 @@ export default function App() {
             <span className="nav-icon">{n.icon}</span>{n.label}
           </button>
         ))}
+        <button className="nav-item" onClick={() => navigate('/admin')}>⚙️ الإدارة</button>
         <button className="nav-item" style={{ marginRight: 'auto' }} onClick={handleLogout}>🚪 خروج</button>
       </nav>
       <main className="app-content">
@@ -66,6 +69,7 @@ export default function App() {
           <Route path="/surgery" element={<SurgeryPage />} />
           <Route path="/clinic" element={<ClinicPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage onLogin={handleLogin} onRegister={handleRegister} />} />
         </Routes>
       </main>
