@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suda Clinic Dashboard</title>
+<style>
+:root{--navy:#040F1E;--royal:#0B3B6B;--med-blue:#185FA5;--bright-blue:#378ADD;--gold:#C9A84C;--gold-light:#F0D080;--bg:#F2F5F9;--surface:#FFF;--text:#040F1E;--text-2:#3B4A5A;--text-3:#7A8A9A;--border:#DDE1E8;--radius:12px;--shadow:0 2px 12px rgba(4,15,30,0.06)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);direction:rtl}
+.sidebar{position:fixed;top:0;right:0;width:240px;height:100vh;background:var(--navy);color:white;padding:0;z-index:100;display:flex;flex-direction:column}
+.sidebar-brand{padding:20px;font-size:20px;font-weight:800;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;gap:10px}
+.sidebar-brand span{font-size:28px}
+.sidebar-nav{flex:1;padding:8px}
+.sidebar-link{display:flex;align-items:center;gap:10px;padding:12px 16px;color:rgba(255,255,255,0.6);text-decoration:none;border-radius:10px;margin-bottom:4px;transition:all 0.2s;cursor:pointer;font-size:14px}
+.sidebar-link:hover,.sidebar-link.active{background:rgba(255,255,255,0.1);color:white}
+.sidebar-link.active{background:var(--royal);color:var(--gold)}
+.main{margin-right:240px;padding:24px}
+.header{background:linear-gradient(135deg,var(--navy),var(--royal));color:white;padding:24px 32px;border-radius:var(--radius);margin-bottom:24px}
+.header h1{font-size:24px;font-weight:800}
+.header p{opacity:0.7;font-size:14px;margin-top:4px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);text-align:center;border-top:3px solid var(--navy)}
+.stat-card.gold{border-top-color:var(--gold)}
+.stat-card.blue{border-top-color:var(--bright-blue)}
+.stat-card.green{border-top-color:#28a745}
+.stat-icon{font-size:28px;margin-bottom:4px}
+.stat-number{font-size:32px;font-weight:800;color:var(--navy)}
+.stat-label{font-size:13px;color:var(--text-3)}
+.card{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin-bottom:20px}
+.card-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.search-bar{width:100%;padding:10px 16px;border:2px solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;margin-bottom:16px}
+.search-bar:focus{outline:none;border-color:var(--royal)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--navy);color:white;padding:10px 12px;text-align:right;font-weight:600}
+td{padding:10px 12px;border-bottom:1px solid var(--border)}
+tr:hover{background:#f0f4f8}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-new{background:#e8fde8;color:#28a745}
+.badge-followup{background:#fff3e0;color:#ff9800}
+.badge-active{background:#fde8e8;color:#dc3545}
+.badge-resolved{background:#e8fde8;color:#28a745}
+.empty{text-align:center;padding:40px;color:var(--text-3)}
+.tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--border);padding-bottom:0}
+.tab{padding:10px 20px;border:none;background:none;font-size:14px;font-weight:600;color:var(--text-3);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:inherit;transition:all 0.2s}
+.tab.active{color:var(--navy);border-bottom-color:var(--gold)}
+.tab-content{display:none}.tab-content.active{display:block}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius);padding:24px;width:90%;max-width:600px;max-height:90vh;overflow-y:auto}
+.modal h2{margin-bottom:16px;color:var(--navy)}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--navy);margin-bottom:4px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--royal)}
+.form-row{display:flex;gap:12px}.form-row .form-group{flex:1}
+.btn{padding:10px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:14px;transition:all 0.2s}
+.btn-primary{background:var(--royal);color:white}.btn-primary:hover{background:var(--med-blue)}
+.btn-gold{background:var(--gold);color:var(--navy)}.btn-gold:hover{background:var(--gold-light)}
+.btn-danger{background:#dc3545;color:white}.btn-danger:hover{background:#c82333}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-group{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;font-size:11px;background:var(--bg);margin:2px}
+@media(max-width:768px){.sidebar{width:60px}.sidebar-brand span:last-child,.sidebar-link span:last-child{display:none}.main{margin-right:60px}.stats-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="sidebar">
+    <div class="sidebar-brand"><span>🏥</span><span>Suda</span></div>
+    <div class="sidebar-nav">
+        <div class="sidebar-link active" onclick="showSection('dashboard')"><span>📊</span><span>Dashboard</span></div>
+        <div class="sidebar-link" onclick="showSection('patients')"><span>👥</span><span>المرضى</span></div>
+        <div class="sidebar-link" onclick="showSection('clinics')"><span>🏥</span><span>العيادات</span></div>
+        <div class="sidebar-link" onclick="showSection('surgeries')"><span>🩺</span><span>العمليات</span></div>
+    </div>
+</div>
+<div class="main">
+    <!-- ===== DASHBOARD ===== -->
+    <div id="sec-dashboard" class="section-view">
+        <div class="header"><h1>📊 Dashboard</h1><p>نظرة عامة على عيادتك</p></div>
+        <div class="stats-grid" id="statsGrid"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+            <div class="card"><div class="card-title">🦠 أكثر الأمراض</div><div id="topDiseases"></div></div>
+            <div class="card"><div class="card-title">🔬 أكثر الفحوصات</div><div id="topExams"></div></div>
+        </div>
+        <div class="card"><div class="card-title">📋 آخر المرضى المضافين</div><div id="recentPatients"></div></div>
+    </div>
+
+    <!-- ===== PATIENTS ===== -->
+    <div id="sec-patients" class="section-view" style="display:none">
+        <div class="header"><h1>👥 إدارة المرضى</h1></div>
+        <div class="card">
+            <div style="display:flex;gap:12px;margin-bottom:16px">
+                <input class="search-bar" id="patientSearch" placeholder="🔍 بحث بالاسم أو الهاتف..." oninput="filterPatients()" style="margin:0;flex:1">
+                <button class="btn btn-primary" onclick="openPatientModal()">➕ مريض جديد</button>
+            </div>
+            <div style="overflow-x:auto"><table id="patientsTable"><thead><tr><th>#</th><th>الاسم</th><th>العمر</th><th>الجنس</th><th>الهاتف</th><th>المكان</th><th></th></tr></thead><tbody id="patientsBody"></tbody></table></div>
+        </div>
+    </div>
+
+    <!-- ===== CLINICS ===== -->
+    <div id="sec-clinics" class="section-view" style="display:none">
+        <div class="header"><h1>🏥 إدارة العيادات</h1></div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <input class="search-bar" id="clinicSearch" placeholder="🔍 بحث باليوم أو المريض..." oninput="filterClinics()" style="margin:0;flex:1;max-width:400px">
+                <button class="btn btn-primary" onclick="openClinicModal()">➕ عيادة جديدة</button>
+            </div>
+            <div id="clinicsList"></div>
+        </div>
+    </div>
+
+    <!-- ===== SURGERIES ===== -->
+    <div id="sec-surgeries" class="section-view" style="display:none">
+        <div class="header"><h1>🩺 إدارة العمليات</h1></div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <div></div>
+                <button class="btn btn-primary" onclick="openSurgeryModal()">➕ عمليات جديدة</button>
+            </div>
+            <div id="surgeriesList"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== PATIENT MODAL ===== -->
+<div class="modal-overlay" id="patientModal">
+    <div class="modal">
+        <h2 id="patientModalTitle">➕ مريض جديد</h2>
+        <input type="hidden" id="pEditId">
+        <div class="form-row"><div class="form-group"><label>الاسم</label><input id="pName" placeholder="الاسم الكامل"></div><div class="form-group"><label>العمر</label><input type="number" id="pAge" placeholder="العمر"></div></div>
+        <div class="form-row"><div class="form-group"><label>الجنس</label><select id="pGender"><option value="">--</option><option>ذكر</option><option>أنثى</option></select></div><div class="form-group"><label>الهاتف</label><input id="pPhone" placeholder="الهاتف"></div></div>
+        <div class="form-group"><label>المكان</label><input id="pAddress" placeholder="العنوان"></div>
+        <div class="form-row"><div class="form-group"><label>المهنة</label><input id="pOccupation" placeholder="المهنة"></div><div class="form-group"><label>فصيلة الدم</label><select id="pBlood"><option value="">--</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>O+</option><option>O-</option><option>AB+</option><option>AB-</option></select></div></div>
+        <div class="form-group"><label>التشخيص</label><input id="pDiagnosis" placeholder="التشخيص"></div>
+        <div class="form-group"><label>العلاج</label><input id="pTreatment" placeholder="العلاج"></div>
+        <div class="form-group"><label>ملاحظات</label><textarea id="pNotes" rows="2" placeholder="ملاحظات"></textarea></div>
+        <div class="btn-group">
+            <button class="btn btn-danger" onclick="closeModal('patientModal')">إلغاء</button>
+            <button class="btn btn-primary" onclick="savePatient()">💾 حفظ</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== CLINIC MODAL ===== -->
+<div class="modal-overlay" id="clinicModal">
+    <div class="modal">
+        <h2>➕ عيادة جديدة</h2>
+        <div class="form-row">
+            <div class="form-group"><label>📅 التاريخ</label><input type="date" id="cDate"></div>
+            <div class="form-group"><label>📍 المكان</label><input id="cPlace" placeholder="اسم العيادة"></div>
+        </div>
+        <div class="card-title" style="margin-top:12px">إضافة مرضى</div>
+        <div class="form-row">
+            <div class="form-group"><input id="cPatientName" placeholder="اسم المريض"></div>
+            <div class="form-group"><input id="cPatientPlace" placeholder="المكان"></div>
+            <div class="form-group"><select id="cPatientType"><option value="new">🆕 جديد</option><option value="followup">🔄 سابقة</option></select></div>
+            <button class="btn btn-gold" onclick="addClinicPatient()">➕</button>
+        </div>
+        <table id="clinicPatientTable"><thead><tr><th>#</th><th>الاسم</th><th>المكان</th><th>الحالة</th><th></th></tr></thead><tbody id="clinicPatientBody"></tbody></table>
+        <div class="btn-group">
+            <button class="btn btn-danger" onclick="closeModal('clinicModal')">إلغاء</button>
+            <button class="btn btn-primary" onclick="saveClinic()">💾 حفظ</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== SURGERY MODAL ===== -->
+<div class="modal-overlay" id="surgeryModal">
+    <div class="modal">
+        <h2>➕ عمليات جديدة</h2>
+        <div class="form-group"><label>📅 التاريخ</label><input type="date" id="sDate"></div>
+        <div class="card-title" style="margin-top:12px">إضافة مرضى</div>
+        <div class="form-row">
+            <div class="form-group"><input id="sPatientName" placeholder="اسم المريض"></div>
+            <div class="form-group"><input id="sProcedure" placeholder="نوع العملية"></div>
+            <div class="form-group"><input id="sPhone" placeholder="الهاتف"></div>
+            <button class="btn btn-gold" onclick="addSurgeryPatient()">➕</button>
+        </div>
+        <table id="surgeryPatientTable"><thead><tr><th>#</th><th>المريض</th><th>العملية</th><th>الهاتف</th><th></th></tr></thead><tbody id="surgeryPatientBody"></tbody></table>
+        <div class="btn-group">
+            <button class="btn btn-danger" onclick="closeModal('surgeryModal')">إلغاء</button>
+            <button class="btn btn-primary" onclick="saveSurgery()">💾 حفظ</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '/api';
+let allPatients = [], allClinics = [], allSurgeries = [];
+let clinicTempPatients = [], surgeryTempPatients = [];
+
+// ===== NAV =====
+function showSection(name) {
+    document.querySelectorAll('.section-view').forEach(s => s.style.display = 'none');
+    document.getElementById('sec-' + name).style.display = 'block';
+    document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    if (name === 'dashboard') loadDashboard();
+    if (name === 'patients') loadPatients();
+    if (name === 'clinics') loadClinics();
+    if (name === 'surgeries') loadSurgeries();
+}
+
+// ===== DASHBOARD =====
+async function loadDashboard() {
+    try {
+        const [statsRes, patientsRes] = await Promise.all([
+            fetch(API + '/stats').then(r => r.json()),
+            fetch(API + '/patients').then(r => r.json())
+        ]);
+        document.getElementById('statsGrid').innerHTML = `
+            <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-number">${statsRes.total}</div><div class="stat-label">إجمالي المرضى</div></div>
+            <div class="stat-card gold"><div class="stat-icon">📊</div><div class="stat-number">${statsRes.avgAge}</div><div class="stat-label">متوسط العمر</div></div>
+            <div class="stat-card blue"><div class="stat-icon">♂️</div><div class="stat-number">${statsRes.male}</div><div class="stat-label">ذكور</div></div>
+            <div class="stat-card green"><div class="stat-icon">♀️</div><div class="stat-number">${statsRes.female}</div><div class="stat-label">إناث</div></div>
+        `;
+        document.getElementById('topDiseases').innerHTML = statsRes.topDiseases.length ? statsRes.topDiseases.map(d =>
+            `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${d.name}</span><span style="font-weight:700;color:var(--royal)">${d.count}</span></div>`
+        ).join('') : '<div class="empty">لا توجد بيانات</div>';
+        document.getElementById('topExams').innerHTML = statsRes.topExams.length ? statsRes.topExams.map(d =>
+            `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${d.name}</span><span style="font-weight:700;color:var(--royal)">${d.count}</span></div>`
+        ).join('') : '<div class="empty">لا توجد بيانات</div>';
+        const recent = patientsRes.slice(0, 5);
+        document.getElementById('recentPatients').innerHTML = recent.length ? `<table><thead><tr><th>الاسم</th><th>العمر</th><th>الجنس</th><th>الهاتف</th></tr></thead><tbody>${recent.map(p =>
+            `<tr><td style="font-weight:600">${p.name}</td><td>${p.age}</td><td>${p.gender}</td><td>${p.phone}</td></tr>`
+        ).join('')}</tbody></table>` : '<div class="empty">لا يوجد مرضى</div>';
+    } catch(e) { console.error(e); }
+}
+
+// ===== PATIENTS =====
+async function loadPatients() {
+    allPatients = await fetch(API + '/patients').then(r => r.json());
+    renderPatients(allPatients);
+}
+function renderPatients(list) {
+    document.getElementById('patientsBody').innerHTML = list.length ? list.map((p,i) =>
+        `<tr><td>${i+1}</td><td style="font-weight:600">${p.name}</td><td>${p.age}</td><td>${p.gender}</td><td>${p.phone}</td><td>${p.address}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="editPatient('${p.id}')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deletePatient('${p.id}')">🗑️</button></td></tr>`
+    ).join('') : '<tr><td colspan="7" class="empty">لا يوجد مرضى</td></tr>';
+}
+function filterPatients() {
+    const q = document.getElementById('patientSearch').value.toLowerCase();
+    renderPatients(allPatients.filter(p => p.name.toLowerCase().includes(q) || (p.phone||'').includes(q)));
+}
+function openPatientModal(patient) {
+    document.getElementById('pEditId').value = patient ? patient.id : '';
+    document.getElementById('patientModalTitle').textContent = patient ? '✏️ تعديل مريض' : '➕ مريض جديد';
+    document.getElementById('pName').value = patient?.name || '';
+    document.getElementById('pAge').value = patient?.age || '';
+    document.getElementById('pGender').value = patient?.gender || '';
+    document.getElementById('pPhone').value = patient?.phone || '';
+    document.getElementById('pAddress').value = patient?.address || '';
+    document.getElementById('pOccupation').value = patient?.occupation || '';
+    document.getElementById('pBlood').value = patient?.bloodType || '';
+    document.getElementById('pDiagnosis').value = patient?.records?.[0]?.primaryDx || '';
+    document.getElementById('pTreatment').value = patient?.records?.[0]?.management || '';
+    document.getElementById('pNotes').value = patient?.notes || '';
+    document.getElementById('patientModal').classList.add('show');
+}
+async function editPatient(id) {
+    const p = await fetch(API + '/patients/' + id).then(r => r.json());
+    openPatientModal(p);
+}
+async function savePatient() {
+    const id = document.getElementById('pEditId').value;
+    const data = {
+        name: document.getElementById('pName').value,
+        age: parseInt(document.getElementById('pAge').value) || 0,
+        gender: document.getElementById('pGender').value,
+        phone: document.getElementById('pPhone').value,
+        address: document.getElementById('pAddress').value,
+        occupation: document.getElementById('pOccupation').value,
+        bloodType: document.getElementById('pBlood').value,
+        notes: document.getElementById('pNotes').value,
+        records: []
+    };
+    const dx = document.getElementById('pDiagnosis').value;
+    const tx = document.getElementById('pTreatment').value;
+    if (dx || tx) data.records = [{date: new Date().toISOString().slice(0,10), primaryDx: dx, management: tx}];
+    if (id) { await fetch(API + '/patients/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}); }
+    else { await fetch(API + '/patients', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}); }
+    closeModal('patientModal'); loadPatients();
+}
+async function deletePatient(id) {
+    if (!confirm('حذف هذا المريض؟')) return;
+    await fetch(API + '/patients/' + id, {method:'DELETE'}); loadPatients();
+}
+
+// ===== CLINICS =====
+async function loadClinics() {
+    allClinics = await fetch(API + '/clinics').then(r => r.json());
+    renderClinics(allClinics);
+}
+function renderClinics(list) {
+    const sorted = [...list].sort((a,b) => b.date.localeCompare(a.date));
+    document.getElementById('clinicsList').innerHTML = sorted.length ? sorted.map(d => `
+        <div class="card" style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div><div style="font-weight:700;font-size:15px">📅 ${d.date}</div><div style="font-size:12px;color:var(--text-3)">📍 ${d.place} · 👥 ${d.patients.length} مريض</div></div>
+                <button class="btn btn-danger btn-sm" onclick="deleteClinic('${d.id}')">🗑️</button>
+            </div>
+            <table><thead><tr><th>#</th><th>الاسم</th><th>المكان</th><th>الحالة</th></tr></thead><tbody>${d.patients.map((p,i) =>
+                `<tr><td>${i+1}</td><td style="font-weight:600">${p.name}</td><td>${p.place}</td><td><span class="badge ${p.type==='new'?'badge-new':'badge-followup'}">${p.type==='new'?'🆕 جديد':'🔄 سابقة'}</span></td></tr>`
+            ).join('')}</tbody></table>
+        </div>
+    `).join('') : '<div class="empty">لا توجد عيادات مسجلة</div>';
+}
+function filterClinics() {
+    const q = document.getElementById('clinicSearch').value.toLowerCase();
+    renderClinics(allClinics.filter(d => d.date.includes(q) || d.patients.some(p => p.name.toLowerCase().includes(q))));
+}
+function openClinicModal() {
+    document.getElementById('cDate').value = new Date().toISOString().slice(0,10);
+    document.getElementById('cPlace').value = '';
+    clinicTempPatients = [];
+    renderClinicTemp();
+    document.getElementById('clinicModal').classList.add('show');
+}
+function addClinicPatient() {
+    const name = document.getElementById('cPatientName').value.trim();
+    if (!name) return alert('أدخل اسم المريض');
+    clinicTempPatients.push({name, place: document.getElementById('cPatientPlace').value.trim() || '---', type: document.getElementById('cPatientType').value});
+    document.getElementById('cPatientName').value = '';
+    document.getElementById('cPatientPlace').value = '';
+    renderClinicTemp();
+}
+function renderClinicTemp() {
+    document.getElementById('clinicPatientBody').innerHTML = clinicTempPatients.map((p,i) =>
+        `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.place}</td><td><span class="badge ${p.type==='new'?'badge-new':'badge-followup'}">${p.type==='new'?'🆕 جديد':'🔄 سابقة'}</span></td><td><button class="btn btn-danger btn-sm" onclick="clinicTempPatients.splice(${i},1);renderClinicTemp()">✕</button></td></tr>`
+    ).join('');
+}
+async function saveClinic() {
+    if (!clinicTempPatients.length) return alert('أضف مرضى');
+    await fetch(API + '/clinics', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+        date: document.getElementById('cDate').value, place: document.getElementById('cPlace').value || 'العيادة', patients: clinicTempPatients
+    })});
+    closeModal('clinicModal'); loadClinics();
+}
+async function deleteClinic(id) {
+    if (!confirm('حذف العيادة؟')) return;
+    await fetch(API + '/clinics/' + id, {method:'DELETE'}); loadClinics();
+}
+
+// ===== SURGERIES =====
+async function loadSurgeries() {
+    allSurgeries = await fetch(API + '/surgeries').then(r => r.json());
+    renderSurgeries(allSurgeries);
+}
+function renderSurgeries(list) {
+    const sorted = [...list].sort((a,b) => a.date.localeCompare(b.date));
+    document.getElementById('surgeriesList').innerHTML = sorted.length ? sorted.map(d => `
+        <div class="card" style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div style="font-weight:700;font-size:15px">📅 ${d.date} <span style="font-size:12px;color:var(--text-3);font-weight:400">👥 ${d.patients.length} مريض</span></div>
+                <button class="btn btn-danger btn-sm" onclick="deleteSurgery('${d.id}')">🗑️</button>
+            </div>
+            <table><thead><tr><th>#</th><th>المريض</th><th>العملية</th><th>الهاتف</th></tr></thead><tbody>${d.patients.map((p,i) =>
+                `<tr><td>${i+1}</td><td style="font-weight:600">${p.name}</td><td style="color:var(--royal)">${p.procedure}</td><td>${p.phone}</td></tr>`
+            ).join('')}</tbody></table>
+        </div>
+    `).join('') : '<div class="empty">لا توجد عمليات مسجلة</div>';
+}
+function openSurgeryModal() {
+    document.getElementById('sDate').value = new Date().toISOString().slice(0,10);
+    surgeryTempPatients = [];
+    renderSurgeryTemp();
+    document.getElementById('surgeryModal').classList.add('show');
+}
+function addSurgeryPatient() {
+    const name = document.getElementById('sPatientName').value.trim();
+    if (!name) return alert('أدخل اسم المريض');
+    surgeryTempPatients.push({name, procedure: document.getElementById('sProcedure').value.trim(), phone: document.getElementById('sPhone').value.trim()});
+    document.getElementById('sPatientName').value = '';
+    document.getElementById('sProcedure').value = '';
+    document.getElementById('sPhone').value = '';
+    renderSurgeryTemp();
+}
+function renderSurgeryTemp() {
+    document.getElementById('surgeryPatientBody').innerHTML = surgeryTempPatients.map((p,i) =>
+        `<tr><td>${i+1}</td><td>${p.name}</td><td style="color:var(--royal)">${p.procedure}</td><td>${p.phone}</td><td><button class="btn btn-danger btn-sm" onclick="surgeryTempPatients.splice(${i},1);renderSurgeryTemp()">✕</button></td></tr>`
+    ).join('');
+}
+async function saveSurgery() {
+    if (!surgeryTempPatients.length) return alert('أضف مرضى');
+    await fetch(API + '/surgeries', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+        date: document.getElementById('sDate').value, patients: surgeryTempPatients
+    })});
+    closeModal('surgeryModal'); loadSurgeries();
+}
+async function deleteSurgery(id) {
+    if (!confirm('حذف العمليات؟')) return;
+    await fetch(API + '/surgeries/' + id, {method:'DELETE'}); loadSurgeries();
+}
+
+// ===== UTILS =====
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(m => m.addEventListener('click', e => { if(e.target===m) m.classList.remove('show'); }));
+
+// ===== INIT =====
+loadDashboard();
+</script>
+</body>
+</html>
