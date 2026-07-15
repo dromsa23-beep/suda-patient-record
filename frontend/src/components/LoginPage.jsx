@@ -1,19 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
+import { db } from '../firebase'
+import { collection, getDocs, addDoc } from 'firebase/firestore'
 
-function getDB() {
-  try { return JSON.parse(localStorage.getItem('sudaDB') || '{}') } catch { return {} }
-}
-function saveDB(db) { localStorage.setItem('sudaDB', JSON.stringify(db)) }
+const defaultAdmin = { username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }
 
-const defaultAdmin = { id: 'admin001', username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }
-
-function initAdmins() {
-  const db = getDB()
-  if (!db.admins || !db.admins.length) {
-    db.admins = [defaultAdmin]
-    saveDB(db)
+async function initAdmins() {
+  const snap = await getDocs(collection(db, 'admins'))
+  if (snap.empty) {
+    await addDoc(collection(db, 'admins'), defaultAdmin)
   }
 }
 
@@ -31,11 +27,14 @@ export default function LoginPage({ onLogin, onRegister }) {
   const doLogin = async () => {
     try {
       setError('')
-      const db = getDB()
-      const admins = db.admins || []
-      const isAdmin = admins.find(a => a.username === creds.username && a.password === creds.password)
-      if (isAdmin) {
-        localStorage.setItem('sudaAdmin', JSON.stringify({ username: isAdmin.username, name: isAdmin.name, role: isAdmin.role }))
+      const snap = await getDocs(collection(db, 'admins'))
+      const found = snap.docs.find(d => {
+        const a = d.data()
+        return a.username === creds.username && a.password === creds.password
+      })
+      if (found) {
+        const a = found.data()
+        localStorage.setItem('sudaAdmin', JSON.stringify({ id: found.id, username: a.username, name: a.name, role: a.role }))
         navigate('/admin')
         return
       }

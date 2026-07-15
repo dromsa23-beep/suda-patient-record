@@ -1,23 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
+import { db } from '../firebase'
+import {
+  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc
+} from 'firebase/firestore'
 
-function getDB() {
-  try { return JSON.parse(localStorage.getItem('sudaDB') || '{}') } catch { return {} }
-}
-function saveDB(db) { localStorage.setItem('sudaDB', JSON.stringify(db)) }
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
-
-const defaultAdmin = { id: 'admin001', username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }
-
-function initAdmins() {
-  const db = getDB()
-  if (!db.admins || !db.admins.length) {
-    db.admins = [defaultAdmin]
-    saveDB(db)
-  }
-  return db.admins
-}
 
 export default function AdminPage() {
   const [admin, setAdmin] = useState(null)
@@ -39,11 +28,19 @@ function AdminLogin({ onLogin }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  const handleLogin = () => {
-    const admins = initAdmins()
-    const found = admins.find(a => a.username === username && a.password === password)
-    if (!found) { setError('اسم المستخدم أو كلمة المرور خاطئة'); return }
-    onLogin({ username: found.username, name: found.name, role: found.role })
+  const handleLogin = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'admins'))
+      const found = snap.docs.find(d => {
+        const a = d.data()
+        return a.username === username && a.password === password
+      })
+      if (!found) { setError('اسم المستخدم أو كلمة المرور خاطئة'); return }
+      const a = found.data()
+      onLogin({ id: found.id, username: a.username, name: a.name, role: a.role })
+    } catch (e) {
+      setError('خطأ في الاتصال بقاعدة البيانات')
+    }
   }
 
   return (
@@ -69,133 +66,121 @@ function AdminLogin({ onLogin }) {
 function AdminDashboard({ admin, onLogout, onBack }) {
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState([])
-  const [patients, setPatients] = useState([])
+  const [patientsList, setPatientsList] = useState([])
   const [admins, setAdmins] = useState([])
   const [complaints, setComplaints] = useState([])
   const [newAdmin, setNewAdmin] = useState({ username: '', password: '', name: '', clinic: '' })
   const [newComplaint, setNewComplaint] = useState('')
   const [showAddAdmin, setShowAddAdmin] = useState(false)
   const [toast, setToast] = useState('')
+  const [loading, setLoading] = useState(true)
 
-  const loadData = () => {
-    const db = getDB()
-    setUsers(db.users || [])
-    setPatients(db.patients || [])
-    setAdmins(db.admins || [])
-    setComplaints(db.complaints || [])
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      const [usersSnap, patientsSnap, adminsSnap, complaintsSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'patients')),
+        getDocs(collection(db, 'admins')),
+        getDocs(collection(db, 'complaints')),
+      ])
+      setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setPatientsList(patientsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setAdmins(adminsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setComplaints(complaintsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
   useEffect(() => { loadData() }, [])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
 
-  const addAdmin = () => {
+  const addAdmin = async () => {
     if (!newAdmin.username.trim() || !newAdmin.password.trim() || !newAdmin.name.trim()) return showToast('أكمل جميع الحقول')
-    const db = getDB()
-    if (!db.admins) db.admins = []
-    if (db.admins.find(a => a.username === newAdmin.username)) return showToast('اسم المستخدم موجود بالفعل')
-    db.admins.push({ id: genId(), ...newAdmin, role: 'admin', createdAt: new Date().toISOString() })
-    saveDB(db)
+    const exists = admins.find(a => a.username === newAdmin.username)
+    if (exists) return showToast('اسم المستخدم موجود بالفعل')
+    await addDoc(collection(db, 'admins'), { ...newAdmin, role: 'admin', createdAt: new Date().toISOString() })
     setNewAdmin({ username: '', password: '', name: '', clinic: '' })
     setShowAddAdmin(false)
-    loadData()
+    await loadData()
     showToast('تمت إضافة المشرف')
   }
 
-  const removeAdmin = (id) => {
+  const removeAdmin = async (id) => {
     if (admin.role !== 'superadmin') return showToast('فقط المدير العام يمكنه حذف المشرفين')
-    if (id === 'admin001') return showToast('لا يمكن حذف المدير العام')
+    const found = admins.find(a => a.id === id)
+    if (found && found.role === 'superadmin') return showToast('لا يمكن حذف المدير العام')
     if (!confirm('هل أنت متأكد من حذف هذا المشرف؟')) return
-    const db = getDB()
-    db.admins = (db.admins || []).filter(a => a.id !== id)
-    saveDB(db)
-    loadData()
+    await deleteDoc(doc(db, 'admins', id))
+    await loadData()
     showToast('تم حذف المشرف')
   }
 
-  const removeUser = (id) => {
+  const removeUser = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذا المستخدم؟')) return
-    const db = getDB()
-    db.users = (db.users || []).filter(u => u.id !== id)
-    saveDB(db)
-    loadData()
+    await deleteDoc(doc(db, 'users', id))
+    await loadData()
     showToast('تم حذف المستخدم')
   }
 
-  const addComplaint = () => {
+  const addComplaint = async () => {
     if (!newComplaint.trim()) return showToast('اكتب الشكوى أولاً')
-    const db = getDB()
-    if (!db.complaints) db.complaints = []
-    db.complaints.unshift({ id: genId(), text: newComplaint.trim(), by: 'مستفيد', date: new Date().toISOString(), status: 'جديد' })
-    saveDB(db)
+    await addDoc(collection(db, 'complaints'), { text: newComplaint.trim(), by: 'مستفيد', date: new Date().toISOString(), status: 'جديد' })
     setNewComplaint('')
-    loadData()
+    await loadData()
     showToast('تم إرسال الشكوى')
   }
 
-  const resolveComplaint = (id) => {
-    const db = getDB()
-    db.complaints = (db.complaints || []).map(c => c.id === id ? { ...c, status: 'تم الحل' } : c)
-    saveDB(db)
-    loadData()
+  const resolveComplaint = async (id) => {
+    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل' })
+    await loadData()
   }
 
-  const deletePatient = (id) => {
+  const deletePatient = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذا المريض؟')) return
-    const db = getDB()
-    db.patients = (db.patients || []).filter(p => p.id !== id)
-    saveDB(db)
-    loadData()
+    await deleteDoc(doc(db, 'patients', id))
+    await loadData()
     showToast('تم حذف المريض')
   }
 
-  const approveUser = (id) => {
-    const db = getDB()
-    db.users = (db.users || []).map(u => u.id === id ? { ...u, approved: true } : u)
-    saveDB(db)
-    loadData()
+  const approveUser = async (id) => {
+    await updateDoc(doc(db, 'users', id), { approved: true })
+    await loadData()
     showToast('تمت الموافقة على المستخدم')
   }
 
-  const rejectUser = (id) => {
+  const rejectUser = async (id) => {
     if (!confirm('هل تريد رفض هذا الطلب وحذفه؟')) return
-    const db = getDB()
-    db.users = (db.users || []).filter(u => u.id !== id)
-    saveDB(db)
-    loadData()
+    await deleteDoc(doc(db, 'users', id))
+    await loadData()
     showToast('تم رفض الطلب')
   }
 
-  const updateSubscription = (id, months) => {
-    const db = getDB()
-    const user = (db.users || []).find(u => u.id === id)
+  const updateSubscription = async (id, months) => {
+    const user = users.find(u => u.id === id)
     if (!user) return
     const now = new Date()
     const currentEnd = user.subscriptionEnd ? new Date(user.subscriptionEnd) : now
     const base = currentEnd > now ? currentEnd : now
     const newEnd = new Date(base)
     newEnd.setMonth(newEnd.getMonth() + months)
-    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: newEnd.toISOString() } : u)
-    saveDB(db)
-    loadData()
+    await updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() })
+    await loadData()
     showToast(`تم تمديد الاشتراك ${months} شهر`)
   }
 
-  const freezeUser = (id) => {
-    const db = getDB()
-    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: new Date().toISOString() } : u)
-    saveDB(db)
-    loadData()
+  const freezeUser = async (id) => {
+    await updateDoc(doc(db, 'users', id), { subscriptionEnd: new Date().toISOString() })
+    await loadData()
     showToast('تم تجميد الحساب')
   }
 
-  const unfreezeUser = (id, months = 1) => {
-    const db = getDB()
+  const unfreezeUser = async (id, months = 1) => {
     const now = new Date()
     const newEnd = new Date(now)
     newEnd.setMonth(newEnd.getMonth() + months)
-    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: newEnd.toISOString() } : u)
-    saveDB(db)
-    loadData()
+    await updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() })
+    await loadData()
     showToast('تم تفعيل الحساب')
   }
 
@@ -214,6 +199,15 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const newComplaints = complaints.filter(c => c.status === 'جديد').length
   const expiredCount = users.filter(u => isExpired(u)).length
+
+  if (loading) return (
+    <div className="login-page">
+      <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-2)' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
+        <div>جاري تحميل البيانات...</div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="app-container">
@@ -242,7 +236,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           {tab === 'overview' && <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
               <div className="stat-card navy"><div className="stat-icon">👥</div><div className="number">{users.length}</div><div className="label">المستخدمين</div></div>
-              <div className="stat-card gold"><div className="stat-icon">🏥</div><div className="number">{patients.length}</div><div className="label">المرضى</div></div>
+              <div className="stat-card gold"><div className="stat-icon">🏥</div><div className="number">{patientsList.length}</div><div className="label">المرضى</div></div>
               <div className="stat-card blue"><div className="stat-icon">⚙️</div><div className="number">{admins.length}</div><div className="label">المشرفين</div></div>
               <div className="stat-card gold"><div className="stat-icon">📝</div><div className="number">{newComplaints}</div><div className="label">شكاوى جديدة</div></div>
               <div className="stat-card navy" style={expiredCount > 0 ? { border: '2px solid var(--danger)' } : {}}><div className="stat-icon">❄️</div><div className="number" style={expiredCount > 0 ? { color: 'var(--danger)' } : {}}>{expiredCount}</div><div className="label">حسابات منتهية</div></div>
@@ -274,7 +268,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                     <div className="patient-name">{a.name} {a.role === 'superadmin' && <span style={{ fontSize: 10, background: 'var(--gold)', color: 'var(--navy)', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>مدير عام</span>}</div>
                     <div className="patient-meta">👤 {a.username} · 🔑 {a.password} · 🏥 {a.clinic || 'غير محدد'}</div>
                   </div>
-                  {a.id !== 'admin001' && <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>}
+                  {a.role !== 'superadmin' && <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>}
                 </div>
               ))}
             </div>
@@ -370,8 +364,8 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
           {tab === 'patients' && <div>
             <div className="section">
-              <div className="section-title"><span className="icon">🏥</span> جميع المرضى ({patients.length})</div>
-              {patients.map(p => (
+              <div className="section-title"><span className="icon">🏥</span> جميع المرضى ({patientsList.length})</div>
+              {patientsList.map(p => (
                 <div key={p.id} className="patient-item">
                   <div className="patient-avatar">{p.name?.[0] || '?'}</div>
                   <div className="patient-info">
@@ -381,7 +375,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                   <button onClick={() => deletePatient(p.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
                 </div>
               ))}
-              {!patients.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا يوجد مرضى مسجلين</div>}
+              {!patientsList.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا يوجد مرضى مسجلين</div>}
             </div>
           </div>}
 
@@ -440,7 +434,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                     <div className="patient-name">{a.name} {a.role === 'superadmin' && <span style={{ fontSize: 10, background: 'var(--gold)', color: 'var(--navy)', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>مدير عام</span>}</div>
                     <div className="patient-meta">👤 {a.username} · 🔑 {a.password} · 🏥 {a.clinic || 'غير محدد'} · 📅 {new Date(a.createdAt).toLocaleDateString('ar')}</div>
                   </div>
-                  <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: a.id === 'admin001' ? 'var(--border)' : 'var(--danger)', cursor: a.id === 'admin001' ? 'not-allowed' : 'pointer', fontSize: 16 }} title={a.id === 'admin001' ? 'لا يمكن حذف المدير العام' : 'حذف'}>🗑️</button>
+                  {a.role !== 'superadmin' && <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>}
                 </div>
               ))}
             </div>
