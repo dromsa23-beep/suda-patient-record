@@ -165,6 +165,42 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     showToast('تم رفض الطلب')
   }
 
+  const updateSubscription = (id, months) => {
+    const db = getDB()
+    const user = (db.users || []).find(u => u.id === id)
+    if (!user) return
+    const now = new Date()
+    const currentEnd = user.subscriptionEnd ? new Date(user.subscriptionEnd) : now
+    const base = currentEnd > now ? currentEnd : now
+    const newEnd = new Date(base)
+    newEnd.setMonth(newEnd.getMonth() + months)
+    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: newEnd.toISOString() } : u)
+    saveDB(db)
+    loadData()
+    showToast(`تم تمديد الاشتراك ${months} شهر`)
+  }
+
+  const freezeUser = (id) => {
+    const db = getDB()
+    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: new Date().toISOString() } : u)
+    saveDB(db)
+    loadData()
+    showToast('تم تجميد الحساب')
+  }
+
+  const unfreezeUser = (id, months = 1) => {
+    const db = getDB()
+    const now = new Date()
+    const newEnd = new Date(now)
+    newEnd.setMonth(newEnd.getMonth() + months)
+    db.users = (db.users || []).map(u => u.id === id ? { ...u, subscriptionEnd: newEnd.toISOString() } : u)
+    saveDB(db)
+    loadData()
+    showToast('تم تفعيل الحساب')
+  }
+
+  const isExpired = (u) => u.subscriptionEnd && new Date(u.subscriptionEnd) < new Date()
+
   const pendingUsers = users.filter(u => u.approved === false).length
 
   const tabs = [
@@ -177,6 +213,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   ]
 
   const newComplaints = complaints.filter(c => c.status === 'جديد').length
+  const expiredCount = users.filter(u => isExpired(u)).length
 
   return (
     <div className="app-container">
@@ -203,11 +240,12 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           </div>
 
           {tab === 'overview' && <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
               <div className="stat-card navy"><div className="stat-icon">👥</div><div className="number">{users.length}</div><div className="label">المستخدمين</div></div>
               <div className="stat-card gold"><div className="stat-icon">🏥</div><div className="number">{patients.length}</div><div className="label">المرضى</div></div>
               <div className="stat-card blue"><div className="stat-icon">⚙️</div><div className="number">{admins.length}</div><div className="label">المشرفين</div></div>
               <div className="stat-card gold"><div className="stat-icon">📝</div><div className="number">{newComplaints}</div><div className="label">شكاوى جديدة</div></div>
+              <div className="stat-card navy" style={expiredCount > 0 ? { border: '2px solid var(--danger)' } : {}}><div className="stat-icon">❄️</div><div className="number" style={expiredCount > 0 ? { color: 'var(--danger)' } : {}}>{expiredCount}</div><div className="label">حسابات منتهية</div></div>
             </div>
             <div className="section">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -296,18 +334,36 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           {tab === 'users' && <div>
             <div className="section">
               <div className="section-title"><span className="icon">👥</span> جميع المستخدمين ({users.length})</div>
-              {users.map(u => (
-                <div key={u.id} className="patient-item">
-                  <div className="patient-avatar">{u.name?.[0] || u.username?.[0] || '?'}</div>
-                  <div className="patient-info">
-                    <div className="patient-name">{u.name || u.username}</div>
-                    <div className="patient-meta">
-                      👤 {u.username} · 🔑 {u.password || '***'} · 🏥 {u.clinic || 'غير محدد'} · 🩺 {u.specialty || 'غير محدد'} · 📅 {new Date(u.createdAt).toLocaleDateString('ar')}
+              {users.map(u => {
+                const expired = isExpired(u)
+                const end = u.subscriptionEnd ? new Date(u.subscriptionEnd).toLocaleDateString('ar') : 'غير محدد'
+                const daysLeft = u.subscriptionEnd ? Math.ceil((new Date(u.subscriptionEnd) - new Date()) / (1000*60*60*24)) : 0
+                return (
+                  <div key={u.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="patient-avatar" style={expired ? { background: 'linear-gradient(135deg, #e74c3c, #c0392b)' } : {}}>{u.name?.[0] || '?'}</div>
+                        <div className="patient-info">
+                          <div className="patient-name">{u.name || u.username} {expired && <span style={{ fontSize: 10, background: 'var(--danger)', color: 'white', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>منتهي</span>}</div>
+                          <div className="patient-meta">👤 {u.username} · 🔑 {u.password || '***'} · 🏥 {u.clinic || 'غير محدد'} · 🩺 {u.specialty || 'غير محدد'}</div>
+                          <div className="patient-meta">📅 ينتهي: {end} {expired ? '❌' : daysLeft > 0 ? `(${daysLeft} يوم متبقي)` : ''}</div>
+                        </div>
+                      </div>
+                      <button onClick={() => removeUser(u.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn btn-accent btn-sm" onClick={() => updateSubscription(u.id, 1)}>➕ شهر</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => updateSubscription(u.id, 3)}>➕ 3 أشهر</button>
+                      <button className="btn btn-sm" style={{ background: 'var(--royal)', color: 'white' }} onClick={() => updateSubscription(u.id, 12)}>➕ سنة</button>
+                      {expired ? (
+                        <button className="btn btn-sm" style={{ background: 'var(--success)', color: 'white' }} onClick={() => unfreezeUser(u.id)}>🔄 تفعيل</button>
+                      ) : (
+                        <button className="btn btn-sm" style={{ background: 'var(--danger)', color: 'white' }} onClick={() => freezeUser(u.id)}>❄️ تجميد</button>
+                      )}
                     </div>
                   </div>
-                  <button onClick={() => removeUser(u.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
-                </div>
-              ))}
+                )
+              })}
               {!users.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا يوجد مستخدمين مسجلين</div>}
             </div>
           </div>}
