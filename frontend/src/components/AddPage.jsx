@@ -21,6 +21,111 @@ export default function AddPage({ user }) {
   const set = (k, v) => setF({ ...f, [k]: v })
   const toggleAccordion = (name) => setActiveAccordion(activeAccordion === name ? '' : name)
 
+  const parseMedicalResults = (text) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    const sections = []
+    let currentSection = ''
+
+    const medicalTerms = {
+      'cbc': '🩸 CBC (صورة دم كاملة)',
+      'complete blood': '🩸 CBC (صورة دم كاملة)',
+      'blood count': '🩸 CBC (صورة دم كاملة)',
+      'hemoglobin': '🩸 Hemoglobin',
+      'hgb': '🩸 Hemoglobin',
+      'hb': '🩸 Hemoglobin',
+      'wbc': '⚪ WBC (كريات الدم البيضاء)',
+      'white blood': '⚪ WBC (كريات الدم البيضاء)',
+      'leukocyte': '⚪ WBC',
+      'rbc': '🔴 RBC (كريات الدم الحمراء)',
+      'red blood': '🔴 RBC',
+      'platelet': '🟡 Platelet (صفائح الدم)',
+      'plt': '🟡 Platelet',
+      'hematocrit': '🔴 Hematocrit',
+      'hct': '🔴 Hematocrit',
+      'mcv': '📏 MCV',
+      'mch': '📏 MCH',
+      'mchc': '📏 MCHC',
+      'rdw': '📏 RDW',
+      'neutrophil': '🟣 Neutrophil',
+      'lymphocyte': '🔵 Lymphocyte',
+      'monocyte': '🟢 Monocyte',
+      'eosinophil': '🟠 Eosinophil',
+      'basophil': '⚫ Basophil',
+
+      'glucose': '🍬 Glucose (سكر)',
+      'sugar': '🍬 Glucose',
+      'fasting': '🍬 Fasting Glucose',
+      'bun': '🧪 BUN',
+      'creatinine': '🧪 Creatinine',
+      'urea': '🧪 Urea',
+      'uric acid': '🧪 Uric Acid',
+      'cholesterol': '💧 Cholesterol',
+      'triglyceride': '💧 Triglyceride',
+      'hdl': '💧 HDL',
+      'ldl': '💧 LDL',
+      'alt': '🫀 ALT (كبد)',
+      'ast': '🫀 AST (كبد)',
+      'sgpt': '🫀 SGPT',
+      'sgot': '🫀 SGOT',
+      'bilirubin': '🟡 Bilirubin',
+      'albumin': '🧪 Albumin',
+      'protein': '🧪 Total Protein',
+      'calcium': '🦴 Calcium',
+      'phosphate': '🦴 Phosphate',
+      'sodium': '🧂 Sodium',
+      'potassium': '🧂 Potassium',
+      'chloride': '🧂 Chloride',
+      'magnesium': '🧂 Magnesium',
+      'iron': '🔩 Iron',
+      'ferritin': '🔩 Ferritin',
+
+      'tsh': '🦋 TSH (غدة درقية)',
+      'thyroid': '🦋 Thyroid',
+      't3': '🦋 T3',
+      't4': '🦋 T4',
+      'free t4': '🦋 Free T4',
+
+      'ua': '🧪 U/A (تحليل بول)',
+      'urine': '🧪 Urine Analysis',
+      'urinalysis': '🧪 Urine Analysis',
+
+      'esr': '🔴 ESR (tah)'
+
+    }
+
+    lines.forEach(line => {
+      const lower = line.toLowerCase()
+      let found = false
+
+      for (const [key, label] of Object.entries(medicalTerms)) {
+        if (lower.includes(key)) {
+          if (currentSection !== label) {
+            currentSection = label
+            sections.push(`\n${'='.repeat(30)}\n${label}\n${'='.repeat(30)}`)
+          }
+          sections.push(`  ${line}`)
+          found = true
+          break
+        }
+      }
+
+      if (!found && (line.match(/\d/) || line.match(/[<>]/))) {
+        if (currentSection) {
+          sections.push(`  ${line}`)
+        } else {
+          sections.push(`  ${line}`)
+        }
+      }
+    })
+
+    if (sections.length === 0) return text.trim()
+
+    let result = sections.join('\n')
+    result = result.replace(/\n{3,}/g, '\n\n')
+
+    return `🔬 === تحليل النتائج الطبية ===\n${result}\n\n📝 النص الأصلي:\n${text.trim()}`
+  }
+
   const runOCR = async (imageDataUrl, targetField) => {
     try {
       setOcrLoading(true)
@@ -33,9 +138,10 @@ export default function AddPage({ user }) {
         const last = records.length - 1
         const existing = records[last][targetField] || ''
         const separator = existing ? '\n---\n' : ''
-        records[last] = { ...records[last], [targetField]: existing + separator + '📷 OCR: ' + text.trim() }
+        const parsed = parseMedicalResults(text)
+        records[last] = { ...records[last], [targetField]: existing + separator + parsed }
         setF({ ...f, records })
-        alert('✅ تم قراءة الصورة وإضافة النتيجة')
+        alert('✅ تم قراءة وتحليل الصورة بنجاح')
       } else {
         alert('⚠️ لم يتم التعرف على نص في الصورة')
       }
