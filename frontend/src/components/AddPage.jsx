@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
@@ -13,10 +13,23 @@ function RowMemo({ fieldKey, label, editMode, children }) {
 }
 const Row = React.memo(RowMemo)
 
+function StableInput({ defaultValue, onChange, ...props }) {
+  const ref = useRef(defaultValue)
+  return <input ref={ref} defaultValue={defaultValue} onChange={e => { ref.current = e.target.value; onChange(e.target.value) }} {...props} />
+}
+const MemoInput = React.memo(StableInput)
+
+function StableTextarea({ defaultValue, onChange, ...props }) {
+  const ref = useRef(defaultValue)
+  return <textarea ref={ref} defaultValue={defaultValue} onChange={e => { ref.current = e.target.value; onChange(e.target.value) }} {...props} />
+}
+const MemoTextarea = React.memo(StableTextarea)
+
 export default function AddPage({ user }) {
   const navigate = useNavigate()
   const { id } = useParams()
-  const [f, setF] = useState({ ...emptyPatient })
+  const fRef = useRef({ ...emptyPatient })
+  const [, forceRender] = useState(0)
   const [activeAccordion, setActiveAccordion] = useState('personal')
   const [editMode, setEditMode] = useState(false)
   const [customFields, setCustomFields] = useState([])
@@ -25,21 +38,23 @@ export default function AddPage({ user }) {
   const [hiddenRows, setHiddenRows] = useState({})
   const [customRows, setCustomRows] = useState({})
   const [lightbox, setLightbox] = useState({ images: [], index: null })
-  const set = useCallback((k, v) => setF(prev => ({ ...prev, [k]: v })), [])
-  const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
+  const [recordsVersion, setRecordsVersion] = useState(0)
+  const recordsRef = useRef([{ date: new Date().toISOString().slice(0, 10) }])
 
-  const debouncedSet = useCallback((k, v) => {
-    const timer = setTimeout(() => setF(prev => ({ ...prev, [k]: v })), 50)
-    return () => clearTimeout(timer)
+  const f = fRef.current
+  const r = useMemo(() => recordsRef.current[recordsRef.current.length - 1] || {}, [recordsVersion])
+  const invImages = useMemo(() => recordsRef.current[recordsRef.current.length - 1]?.invImages || [], [recordsVersion])
+
+  const set = useCallback((k, v) => { fRef.current = { ...fRef.current, [k]: v } }, [])
+
+  const updateRecord = useCallback((field, value) => {
+    const recs = recordsRef.current
+    if (!recs.length) recs.push({ date: new Date().toISOString().slice(0, 10) })
+    recs[recs.length - 1] = { ...recs[recs.length - 1], [field]: value }
+    setRecordsVersion(v => v + 1)
   }, [])
 
-  const Input = useMemo(() => React.memo(({ value, onChange, ...props }) => (
-    <input value={value} onChange={e => onChange(e.target.value)} {...props} />
-  )), [])
-
-  const TextArea = useMemo(() => React.memo(({ value, onChange, ...props }) => (
-    <textarea value={value} onChange={e => onChange(e.target.value)} {...props} />
-  )), [])
+  const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
 
   const compressImage = (dataUrl, maxWidth = 1200, quality = 0.8) => {
     return new Promise((resolve) => {
@@ -48,10 +63,8 @@ export default function AddPage({ user }) {
         const canvas = document.createElement('canvas')
         let w = img.width, h = img.height
         if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, w, h)
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
         resolve(canvas.toDataURL('image/jpeg', quality))
       }
       img.src = dataUrl
@@ -98,31 +111,41 @@ export default function AddPage({ user }) {
     if (id) patientsApi.get(id).then(r => {
       const data = r.data
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
-      setF(data)
+      fRef.current = data
+      recordsRef.current = data.records
+      forceRender(n => n + 1)
     }).catch(() => { })
   }, [id])
 
   const save = async () => {
     try {
-      const data = { ...f, createdBy: user?.username || 'unknown' }
+      const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown' }
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
       if (id) { await patientsApi.update(id, data); alert('تم التحديث'); navigate(-1) }
       else { await patientsApi.create(data); alert('تم الحفظ'); navigate('/search') }
     } catch (e) { alert('خطأ: ' + (e.response?.data?.detail || e.message)) }
   }
 
-  const togglePmh = (v) => set('pmh', f.pmh.includes(v) ? f.pmh.filter(x => x !== v) : [...f.pmh, v])
-  const toggleFh = (v) => set('fh', f.fh.includes(v) ? f.fh.filter(x => x !== v) : [...f.fh, v])
+  const togglePmh = (v) => {
+    const current = fRef.current.pmh || []
+    fRef.current = { ...fRef.current, pmh: current.includes(v) ? current.filter(x => x !== v) : [...current, v] }
+    forceRender(n => n + 1)
+  }
+  const toggleFh = (v) => {
+    const current = fRef.current.fh || []
+    fRef.current = { ...fRef.current, fh: current.includes(v) ? current.filter(x => x !== v) : [...current, v] }
+    forceRender(n => n + 1)
+  }
 
   const rosData = (() => {
-    try { return typeof f.ros === 'string' ? JSON.parse(f.ros || '{}') : (f.ros || {}) } catch { return {} }
+    try { return typeof fRef.current.ros === 'string' ? JSON.parse(fRef.current.ros || '{}') : (fRef.current.ros || {}) } catch { return {} }
   })()
   const getRos = (key) => Array.isArray(rosData[key]) ? rosData[key] : (rosData[key] ? [rosData[key]] : [])
   const toggleRosItem = (system, item) => {
     const current = getRos(system)
     const next = current.includes(item) ? current.filter(x => x !== item) : [...current, item]
-    const d = { ...rosData, [system]: next }
-    set('ros', d)
+    fRef.current = { ...fRef.current, ros: { ...rosData, [system]: next } }
+    forceRender(n => n + 1)
   }
 
   const handleInvestigationImages = async (e) => {
@@ -131,12 +154,11 @@ export default function AddPage({ user }) {
       const reader = new FileReader()
       reader.onload = async (ev) => {
         const compressed = await compressImage(ev.target.result)
-        const records = [...(f.records || [])]
-        if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
-        const last = records.length - 1
-        const images = [...(records[last].invImages || []), compressed]
-        records[last] = { ...records[last], invImages: images }
-        setF({ ...f, records })
+        const recs = recordsRef.current
+        if (!recs.length) recs.push({ date: new Date().toISOString().slice(0, 10) })
+        const last = recs.length - 1
+        recs[last] = { ...recs[last], invImages: [...(recs[last].invImages || []), compressed] }
+        setRecordsVersion(v => v + 1)
       }
       reader.readAsDataURL(file)
     }
@@ -149,13 +171,15 @@ export default function AddPage({ user }) {
       const reader = new FileReader()
       reader.onload = async (ev) => {
         const compressed = await compressImage(ev.target.result)
-        const records = [...(f.records || [])]
-        if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
-        const last = records.length - 1
-        const images = [...(records[last].imgImages || []), compressed]
-        const keys = [...(records[last].imgImageKeys || []), key]
-        records[last] = { ...records[last], imgImages: images, imgImageKeys: keys }
-        setF({ ...f, records })
+        const recs = recordsRef.current
+        if (!recs.length) recs.push({ date: new Date().toISOString().slice(0, 10) })
+        const last = recs.length - 1
+        recs[last] = {
+          ...recs[last],
+          imgImages: [...(recs[last].imgImages || []), compressed],
+          imgImageKeys: [...(recs[last].imgImageKeys || []), key]
+        }
+        setRecordsVersion(v => v + 1)
       }
       reader.readAsDataURL(file)
     }
@@ -163,50 +187,38 @@ export default function AddPage({ user }) {
   }
 
   const removeInvImage = (idx) => {
-    const records = [...(f.records || [])]
-    if (!records.length) return
-    const last = records.length - 1
-    const images = [...(records[last].invImages || [])]
+    const recs = recordsRef.current
+    if (!recs.length) return
+    const last = recs.length - 1
+    const images = [...(recs[last].invImages || [])]
     images.splice(idx, 1)
-    records[last] = { ...records[last], invImages: images }
-    setF({ ...f, records })
+    recs[last] = { ...recs[last], invImages: images }
+    setRecordsVersion(v => v + 1)
   }
 
   const removeImgImageByKey = (key, gi) => {
-    const records = [...(f.records || [])]
-    if (!records.length) return
-    const last = records.length - 1
-    const allImages = [...(records[last].imgImages || [])]
-    const allKeys = [...(records[last].imgImageKeys || [])]
+    const recs = recordsRef.current
+    if (!recs.length) return
+    const last = recs.length - 1
+    const allImages = [...(recs[last].imgImages || [])]
+    const allKeys = [...(recs[last].imgImageKeys || [])]
     const indices = allKeys.map((k, i) => k === key ? i : -1).filter(i => i >= 0)
     const globalIdx = indices[gi]
     if (globalIdx === undefined) return
     allImages.splice(globalIdx, 1)
     allKeys.splice(globalIdx, 1)
-    records[last] = { ...records[last], imgImages: allImages, imgImageKeys: allKeys }
-    setF({ ...f, records })
+    recs[last] = { ...recs[last], imgImages: allImages, imgImageKeys: allKeys }
+    setRecordsVersion(v => v + 1)
   }
 
   const openImgLightboxByKey = (key, gi) => {
-    const rec = f.records?.[f.records.length - 1]
+    const rec = recordsRef.current[recordsRef.current.length - 1]
     if (!rec) return
     const allImages = rec.imgImages || []
     const allKeys = rec.imgImageKeys || []
     const filtered = allImages.filter((_, i) => allKeys[i] === key)
     setLightbox({ images: filtered, index: gi })
   }
-
-  const invImages = useMemo(() => f.records?.[f.records.length - 1]?.invImages || [], [f.records])
-
-  const updateRecord = useCallback((field, value) => {
-    setF(prev => {
-      const records = [...(prev.records || [])]
-      if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
-      records[records.length - 1] = { ...records[records.length - 1], [field]: value }
-      return { ...prev, records }
-    })
-  }, [])
-  const r = useMemo(() => f.records?.[f.records.length - 1] || {}, [f.records])
 
   const renderSection = (secName) => {
     const isActive = activeAccordion === secName
@@ -235,27 +247,27 @@ export default function AddPage({ user }) {
 
     if (secName === 'personal') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('personal', 'name') && <Row fieldKey="name" label="الاسم الكامل"><input placeholder="الاسم الكامل *" value={f.name} onChange={e => set('name', e.target.value)} /></Row>}
-        {!isRowHidden('personal', 'age') && <Row fieldKey="age" label="العمر والجنس"><div className="form-row"><div className="form-group"><input type="number" placeholder="العمر" value={f.age || ''} onChange={e => set('age', parseInt(e.target.value) || 0)} /></div><div className="form-group"><select value={f.gender} onChange={e => set('gender', e.target.value)}><option value="">الجنس</option>{genders.map(g => <option key={g}>{g}</option>)}</select></div></div></Row>}
-        {!isRowHidden('personal', 'phone') && <Row fieldKey="phone" label="رقم الهاتف"><input placeholder="رقم الهاتف" value={f.phone} onChange={e => set('phone', e.target.value)} /></Row>}
-        {!isRowHidden('personal', 'address') && <Row fieldKey="address" label="العنوان"><input placeholder="العنوان" value={f.address} onChange={e => set('address', e.target.value)} /></Row>}
-        {!isRowHidden('personal', 'blood') && <Row fieldKey="blood" label="فصيلة الدم والمهنة"><div className="form-row"><div className="form-group"><select value={f.bloodType} onChange={e => set('bloodType', e.target.value)}><option value="">فصيلة الدم</option>{bloodTypes.map(b => <option key={b}>{b}</option>)}</select></div><div className="form-group"><input placeholder="المهنة" value={f.occupation} onChange={e => set('occupation', e.target.value)} /></div></div></Row>}
-        {!isRowHidden('personal', 'emergency') && <Row fieldKey="emergency" label="جهة اتصال طارئة"><input placeholder="جهة اتصال طارئة" value={f.emergency} onChange={e => set('emergency', e.target.value)} /></Row>}
-        {(customRows['personal'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><input value={cr.value} onChange={e => updateRowValue('personal', cr.key, e.target.value)} /><button onClick={() => deleteRow('personal', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {!isRowHidden('personal', 'name') && <Row fieldKey="name" label="الاسم الكامل"><MemoInput placeholder="الاسم الكامل *" defaultValue={f.name} onChange={v => set('name', v)} /></Row>}
+        {!isRowHidden('personal', 'age') && <Row fieldKey="age" label="العمر والجنس"><div className="form-row"><div className="form-group"><input type="number" placeholder="العمر" defaultValue={f.age || ''} onChange={e => set('age', parseInt(e.target.value) || 0)} /></div><div className="form-group"><select defaultValue={f.gender} onChange={e => { set('gender', e.target.value); forceRender(n => n + 1) }}><option value="">الجنس</option>{genders.map(g => <option key={g}>{g}</option>)}</select></div></div></Row>}
+        {!isRowHidden('personal', 'phone') && <Row fieldKey="phone" label="رقم الهاتف"><MemoInput placeholder="رقم الهاتف" defaultValue={f.phone} onChange={v => set('phone', v)} /></Row>}
+        {!isRowHidden('personal', 'address') && <Row fieldKey="address" label="العنوان"><MemoInput placeholder="العنوان" defaultValue={f.address} onChange={v => set('address', v)} /></Row>}
+        {!isRowHidden('personal', 'blood') && <Row fieldKey="blood" label="فصيلة الدم والمهنة"><div className="form-row"><div className="form-group"><select defaultValue={f.bloodType} onChange={e => { set('bloodType', e.target.value); forceRender(n => n + 1) }}><option value="">فصيلة الدم</option>{bloodTypes.map(b => <option key={b}>{b}</option>)}</select></div><div className="form-group"><MemoInput placeholder="المهنة" defaultValue={f.occupation} onChange={v => set('occupation', v)} /></div></div></Row>}
+        {!isRowHidden('personal', 'emergency') && <Row fieldKey="emergency" label="جهة اتصال طارئة"><MemoInput placeholder="جهة اتصال طارئة" defaultValue={f.emergency} onChange={v => set('emergency', v)} /></Row>}
+        {(customRows['personal'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoInput defaultValue={cr.value} onChange={v => updateRowValue('personal', cr.key, v)} /><button onClick={() => deleteRow('personal', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'chief') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('chief', 'hpi') && <Row fieldKey="hpi" label="الشكوى الرئيسية"><input placeholder="الشكوى الرئيسية" value={f.hpi} onChange={e => set('hpi', e.target.value)} /></Row>}
-        {(customRows['chief'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><input value={cr.value} onChange={e => updateRowValue('chief', cr.key, e.target.value)} /><button onClick={() => deleteRow('chief', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {!isRowHidden('chief', 'hpi') && <Row fieldKey="hpi" label="الشكوى الرئيسية"><MemoInput placeholder="الشكوى الرئيسية" defaultValue={f.hpi} onChange={v => set('hpi', v)} /></Row>}
+        {(customRows['chief'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoInput defaultValue={cr.value} onChange={v => updateRowValue('chief', cr.key, v)} /><button onClick={() => deleteRow('chief', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'socrates') return (
       <EditAccordion key={secName} {...sectionProps}>
         {!isRowHidden('socrates', 'socratesText') && <Row fieldKey="socratesText" label="SOCRATES Analysis">
-          <textarea placeholder={socratesPlaceholder} value={r.socratesText || ''} onChange={e => updateRecord('socratesText', e.target.value)} style={{ minHeight: 120, fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8, whiteSpace: 'pre' }} />
+          <MemoTextarea placeholder={socratesPlaceholder} defaultValue={r.socratesText || ''} onChange={v => updateRecord('socratesText', v)} style={{ minHeight: 120, fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8, whiteSpace: 'pre' }} />
         </Row>}
-        {(customRows['socrates'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><input value={cr.value} onChange={e => updateRowValue('socrates', cr.key, e.target.value)} /><button onClick={() => deleteRow('socrates', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {(customRows['socrates'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoInput defaultValue={cr.value} onChange={v => updateRowValue('socrates', cr.key, v)} /><button onClick={() => deleteRow('socrates', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'ros') return (
@@ -276,51 +288,51 @@ export default function AddPage({ user }) {
         ))}
         <div className="form-group" style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
           <label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>📝 ملاحظات إضافية (Additional Notes)</label>
-          <textarea placeholder="أي ملاحظات أو أعراض أخرى غير مدرجة في القائمة..." value={r.rosNotes || ''} onChange={e => updateRecord('rosNotes', e.target.value)} style={{ minHeight: 60 }} />
+          <MemoTextarea placeholder="أي ملاحظات أو أعراض أخرى غير مدرجة في القائمة..." defaultValue={r.rosNotes || ''} onChange={v => updateRecord('rosNotes', v)} style={{ minHeight: 60 }} />
         </div>
       </EditAccordion>
     )
     if (secName === 'pmh') return (
       <EditAccordion key={secName} {...sectionProps}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{pmhOptions.map(p => <label key={p} className={`tag ${f.pmh.includes(p) ? 'tag-selected' : 'tag-default'}`}><input type="checkbox" checked={f.pmh.includes(p)} onChange={() => togglePmh(p)} style={{ display: 'none' }} />{p}</label>)}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{pmhOptions.map(p => <label key={p} className={`tag ${(fRef.current.pmh || []).includes(p) ? 'tag-selected' : 'tag-default'}`}><input type="checkbox" checked={(fRef.current.pmh || []).includes(p)} onChange={() => togglePmh(p)} style={{ display: 'none' }} />{p}</label>)}</div>
         <div className="form-group" style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
           <label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>📝 ملاحظات إضافية (Additional Notes)</label>
-          <textarea placeholder="أمراض سابقة أخرى, جراحات, عمليات, أمراض وراثية..." value={r.pmhNotes || ''} onChange={e => updateRecord('pmhNotes', e.target.value)} style={{ minHeight: 60 }} />
+          <MemoTextarea placeholder="أمراض سابقة أخرى, جراحات, عمليات, أمراض وراثية..." defaultValue={r.pmhNotes || ''} onChange={v => updateRecord('pmhNotes', v)} style={{ minHeight: 60 }} />
         </div>
       </EditAccordion>
     )
     if (secName === 'drughistory') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('drughistory', 'chronicMeds') && <Row fieldKey="chronicMeds" label="الأدوية الحالية"><textarea placeholder="مثال: ميتفورمين 500mg مرتين يومياً..." value={f.chronicMeds} onChange={e => set('chronicMeds', e.target.value)} style={{ minHeight: 60 }} /></Row>}
-        {!isRowHidden('drughistory', 'drugAllergies') && <Row fieldKey="drugAllergies" label="الحساسية الدوائية"><textarea placeholder="مثال: بنسيلين (طفح جلدي)..." value={f.drugAllergies} onChange={e => set('drugAllergies', e.target.value)} style={{ minHeight: 60 }} /></Row>}
-        {(customRows['drughistory'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><textarea value={cr.value} onChange={e => updateRowValue('drughistory', cr.key, e.target.value)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('drughistory', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {!isRowHidden('drughistory', 'chronicMeds') && <Row fieldKey="chronicMeds" label="الأدوية الحالية"><MemoTextarea placeholder="مثال: ميتفورمين 500mg مرتين يومياً..." defaultValue={fRef.current.chronicMeds} onChange={v => set('chronicMeds', v)} style={{ minHeight: 60 }} /></Row>}
+        {!isRowHidden('drughistory', 'drugAllergies') && <Row fieldKey="drugAllergies" label="الحساسية الدوائية"><MemoTextarea placeholder="مثال: بنسيلين (طفح جلدي)..." defaultValue={fRef.current.drugAllergies} onChange={v => set('drugAllergies', v)} style={{ minHeight: 60 }} /></Row>}
+        {(customRows['drughistory'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoTextarea defaultValue={cr.value} onChange={v => updateRowValue('drughistory', cr.key, v)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('drughistory', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'fh') return (
       <EditAccordion key={secName} {...sectionProps}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{fhOptions.map(p => <label key={p} className={`tag ${f.fh.includes(p) ? 'tag-selected' : 'tag-default'}`}><input type="checkbox" checked={f.fh.includes(p)} onChange={() => toggleFh(p)} style={{ display: 'none' }} />{p}</label>)}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{fhOptions.map(p => <label key={p} className={`tag ${(fRef.current.fh || []).includes(p) ? 'tag-selected' : 'tag-default'}`}><input type="checkbox" checked={(fRef.current.fh || []).includes(p)} onChange={() => toggleFh(p)} style={{ display: 'none' }} />{p}</label>)}</div>
       </EditAccordion>
     )
     if (secName === 'exam') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('exam', 'vitals') && <Row fieldKey="vitals" label="العلامات الحيوية"><div className="form-row"><div className="form-group"><input placeholder="BP" value={r.bp || ''} onChange={e => updateRecord('bp', e.target.value)} /></div><div className="form-group"><input placeholder="HR" value={r.hr || ''} onChange={e => updateRecord('hr', e.target.value)} /></div></div><div className="form-row"><div className="form-group"><input placeholder="RR" value={r.rr || ''} onChange={e => updateRecord('rr', e.target.value)} /></div><div className="form-group"><input placeholder="Temp" value={r.temp || ''} onChange={e => updateRecord('temp', e.target.value)} /></div></div><div className="form-row"><div className="form-group"><input placeholder="SpO2" value={r.spo2 || ''} onChange={e => updateRecord('spo2', e.target.value)} /></div><div className="form-group"><input placeholder="Weight" value={r.weight || ''} onChange={e => updateRecord('weight', e.target.value)} /></div></div></Row>}
-        {!isRowHidden('exam', 'cv') && <Row fieldKey="cv" label="الجهاز القلبي والتنفسي"><div className="form-group"><input placeholder="CVS" value={f.examCardio} onChange={e => set('examCardio', e.target.value)} /></div><div className="form-group"><input placeholder="Resp" value={f.examChest} onChange={e => set('examChest', e.target.value)} /></div></Row>}
-        {!isRowHidden('exam', 'abd') && <Row fieldKey="abd" label="البطن والجهاز العصبي"><div className="form-group"><input placeholder="Abdomen" value={f.examAbdomen} onChange={e => set('examAbdomen', e.target.value)} /></div><div className="form-group"><input placeholder="CNS" value={f.examCNS} onChange={e => set('examCNS', e.target.value)} /></div><div className="form-group"><input placeholder="MSK" value={f.examMSK} onChange={e => set('examMSK', e.target.value)} /></div></Row>}
-        {(customRows['exam'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><input value={cr.value} onChange={e => updateRowValue('exam', cr.key, e.target.value)} /><button onClick={() => deleteRow('exam', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {!isRowHidden('exam', 'vitals') && <Row fieldKey="vitals" label="العلامات الحيوية"><div className="form-row"><div className="form-group"><MemoInput placeholder="BP" defaultValue={r.bp || ''} onChange={v => updateRecord('bp', v)} /></div><div className="form-group"><MemoInput placeholder="HR" defaultValue={r.hr || ''} onChange={v => updateRecord('hr', v)} /></div></div><div className="form-row"><div className="form-group"><MemoInput placeholder="RR" defaultValue={r.rr || ''} onChange={v => updateRecord('rr', v)} /></div><div className="form-group"><MemoInput placeholder="Temp" defaultValue={r.temp || ''} onChange={v => updateRecord('temp', v)} /></div></div><div className="form-row"><div className="form-group"><MemoInput placeholder="SpO2" defaultValue={r.spo2 || ''} onChange={v => updateRecord('spo2', v)} /></div><div className="form-group"><MemoInput placeholder="Weight" defaultValue={r.weight || ''} onChange={v => updateRecord('weight', v)} /></div></div></Row>}
+        {!isRowHidden('exam', 'cv') && <Row fieldKey="cv" label="الجهاز القلبي والتنفسي"><div className="form-group"><MemoInput placeholder="CVS" defaultValue={fRef.current.examCardio} onChange={v => set('examCardio', v)} /></div><div className="form-group"><MemoInput placeholder="Resp" defaultValue={fRef.current.examChest} onChange={v => set('examChest', v)} /></div></Row>}
+        {!isRowHidden('exam', 'abd') && <Row fieldKey="abd" label="البطن والجهاز العصبي"><div className="form-group"><MemoInput placeholder="Abdomen" defaultValue={fRef.current.examAbdomen} onChange={v => set('examAbdomen', v)} /></div><div className="form-group"><MemoInput placeholder="CNS" defaultValue={fRef.current.examCNS} onChange={v => set('examCNS', v)} /></div><div className="form-group"><MemoInput placeholder="MSK" defaultValue={fRef.current.examMSK} onChange={v => set('examMSK', v)} /></div></Row>}
+        {(customRows['exam'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoInput defaultValue={cr.value} onChange={v => updateRowValue('exam', cr.key, v)} /><button onClick={() => deleteRow('exam', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'investigation') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('investigation', 'results') && <Row fieldKey="results" label="نتائج الفحوصات المخبرية"><textarea placeholder="مثال: CBC: Hb 12, WBC 8000..." value={r.investigations || ''} onChange={e => updateRecord('investigations', e.target.value)} style={{ minHeight: 80 }} /></Row>}
+        {!isRowHidden('investigation', 'results') && <Row fieldKey="results" label="نتائج الفحوصات المخبرية"><MemoTextarea placeholder="مثال: CBC: Hb 12, WBC 8000..." defaultValue={r.investigations || ''} onChange={v => updateRecord('investigations', v)} style={{ minHeight: 80 }} /></Row>}
         {!isRowHidden('investigation', 'upload') && <div className="form-group"><div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 8 }}><label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 8 }}>📷 رفع أو تصوير نتائج الفحوصات</label><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><label style={{ flex: 1, padding: '8px 12px', background: 'var(--royal)', color: 'white', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📁 رفع صورة<input type="file" accept="image/*" multiple onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label><label style={{ flex: 1, padding: '8px 12px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label></div><ImageGrid images={invImages} onRemove={removeInvImage} onOpen={(i) => setLightbox({ images: invImages, index: i })} /></div></div>}
-        {(customRows['investigation'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><textarea value={cr.value} onChange={e => updateRowValue('investigation', cr.key, e.target.value)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('investigation', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {(customRows['investigation'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoTextarea defaultValue={cr.value} onChange={v => updateRowValue('investigation', cr.key, v)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('investigation', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'imaging') return (
       <EditAccordion key={secName} {...sectionProps}>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 6 }}>📝 ملاحظات التصوير</label>
-          <textarea placeholder="وصف نتائج التصوير..." value={r.imagingFindings || ''} onChange={e => updateRecord('imagingFindings', e.target.value)} style={{ minHeight: 60 }} />
+          <MemoTextarea placeholder="وصف نتائج التصوير..." defaultValue={r.imagingFindings || ''} onChange={v => updateRecord('imagingFindings', v)} style={{ minHeight: 60 }} />
         </div>
         {imagingTypes.map(item => (
           <div key={item.key} style={{ marginBottom: 10 }}>
@@ -329,17 +341,17 @@ export default function AddPage({ user }) {
               <label style={{ padding: '4px 10px', background: 'var(--royal)', color: 'white', borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 600 }}>📁 رفع<input type="file" accept="image/*" multiple onChange={e => handleImagingImages(e, item.key)} style={{ display: 'none' }} /></label>
               <label style={{ padding: '4px 10px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleImagingImages(e, item.key)} style={{ display: 'none' }} /></label>
             </div>
-            <ImageGrid images={(f.records?.[f.records.length - 1]?.imgImages || []).filter((_, i) => (f.records?.[f.records.length - 1]?.imgImageKeys || [])[i] === item.key)} onRemove={(gi) => removeImgImageByKey(item.key, gi)} onOpen={(gi) => openImgLightboxByKey(item.key, gi)} />
+            <ImageGrid images={(recordsRef.current[recordsRef.current.length - 1]?.imgImages || []).filter((_, i) => (recordsRef.current[recordsRef.current.length - 1]?.imgImageKeys || [])[i] === item.key)} onRemove={(gi) => removeImgImageByKey(item.key, gi)} onOpen={(gi) => openImgLightboxByKey(item.key, gi)} />
           </div>
         ))}
       </EditAccordion>
     )
     if (secName === 'treatment') return (
       <EditAccordion key={secName} {...sectionProps}>
-        {!isRowHidden('treatment', 'dx') && <Row fieldKey="dx" label="التشخيص الأساسي"><input placeholder="التشخيص" value={r.primaryDx || ''} onChange={e => updateRecord('primaryDx', e.target.value)} /></Row>}
-        {!isRowHidden('treatment', 'rx') && <Row fieldKey="rx" label="خطة العلاج"><textarea placeholder="مثال: Amoxicillin 500mg TDS x 7 days..." value={r.medications || ''} onChange={e => updateRecord('medications', e.target.value)} style={{ minHeight: 60 }} /></Row>}
-        {!isRowHidden('treatment', 'followup') && <Row fieldKey="followup" label="ملاحظات المتابعة"><input placeholder="مثال: مراجعة بعد أسبوع" value={r.management || ''} onChange={e => updateRecord('management', e.target.value)} /></Row>}
-        {(customRows['treatment'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><input value={cr.value} onChange={e => updateRowValue('treatment', cr.key, e.target.value)} /><button onClick={() => deleteRow('treatment', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
+        {!isRowHidden('treatment', 'dx') && <Row fieldKey="dx" label="التشخيص الأساسي"><MemoInput placeholder="التشخيص" defaultValue={r.primaryDx || ''} onChange={v => updateRecord('primaryDx', v)} /></Row>}
+        {!isRowHidden('treatment', 'rx') && <Row fieldKey="rx" label="خطة العلاج"><MemoTextarea placeholder="مثال: Amoxicillin 500mg TDS x 7 days..." defaultValue={r.medications || ''} onChange={v => updateRecord('medications', v)} style={{ minHeight: 60 }} /></Row>}
+        {!isRowHidden('treatment', 'followup') && <Row fieldKey="followup" label="ملاحظات المتابعة"><MemoInput placeholder="مثال: مراجعة بعد أسبوع" defaultValue={r.management || ''} onChange={v => updateRecord('management', v)} /></Row>}
+        {(customRows['treatment'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><MemoInput defaultValue={cr.value} onChange={v => updateRowValue('treatment', cr.key, v)} /><button onClick={() => deleteRow('treatment', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     const cf = customFields.find(c => c.key === secName)
@@ -348,7 +360,7 @@ export default function AddPage({ user }) {
         {cf.fields.map(field => (
           <div key={field.key} className="form-group" style={{ position: 'relative' }}>
             <label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{field.label}</label>
-            <input placeholder={field.label} value={f[field.key] || ''} onChange={e => set(field.key, e.target.value)} />
+            <MemoInput placeholder={field.label} defaultValue={fRef.current[field.key] || ''} onChange={v => set(field.key, v)} />
             {editMode && <button onClick={() => removeFieldFromSection(secName, field.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button>}
           </div>
         ))}
