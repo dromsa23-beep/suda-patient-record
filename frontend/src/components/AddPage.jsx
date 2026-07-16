@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
 import { EditAccordion, EditableRow, Lightbox, ImageGrid } from './shared'
+import { createWorker } from 'tesseract.js'
 
 export default function AddPage({ user }) {
   const navigate = useNavigate()
@@ -16,8 +17,52 @@ export default function AddPage({ user }) {
   const [hiddenRows, setHiddenRows] = useState({})
   const [customRows, setCustomRows] = useState({})
   const [lightbox, setLightbox] = useState({ images: [], index: null })
+  const [ocrLoading, setOcrLoading] = useState(false)
   const set = (k, v) => setF({ ...f, [k]: v })
   const toggleAccordion = (name) => setActiveAccordion(activeAccordion === name ? '' : name)
+
+  const runOCR = async (imageDataUrl, targetField) => {
+    try {
+      setOcrLoading(true)
+      const worker = await createWorker('eng+ara')
+      const { data: { text } } = await worker.recognize(imageDataUrl)
+      await worker.terminate()
+      if (text && text.trim()) {
+        const records = [...(f.records || [])]
+        if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
+        const last = records.length - 1
+        const existing = records[last][targetField] || ''
+        const separator = existing ? '\n---\n' : ''
+        records[last] = { ...records[last], [targetField]: existing + separator + '📷 OCR: ' + text.trim() }
+        setF({ ...f, records })
+        alert('✅ تم قراءة الصورة وإضافة النتيجة')
+      } else {
+        alert('⚠️ لم يتم التعرف على نص في الصورة')
+      }
+    } catch (e) {
+      alert('خطأ في قراءة الصورة: ' + e.message)
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  const openCamera = (callback, ocrTarget) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.capture = 'environment'
+    input.onchange = (e) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        callback(ev.target.result)
+        if (ocrTarget) runOCR(ev.target.result, ocrTarget)
+      }
+      reader.readAsDataURL(file)
+    }
+    input.click()
+  }
 
   const moveSection = (name, dir) => {
     const idx = sectionOrder.indexOf(name)
@@ -97,6 +142,7 @@ export default function AddPage({ user }) {
         const images = [...(records[last].invImages || []), ev.target.result]
         records[last] = { ...records[last], invImages: images }
         setF({ ...f, records })
+        runOCR(ev.target.result, 'investigations')
       }
       reader.readAsDataURL(file)
     })
@@ -115,6 +161,7 @@ export default function AddPage({ user }) {
         const keys = [...(records[last].imgImageKeys || []), key]
         records[last] = { ...records[last], imgImages: images, imgImageKeys: keys }
         setF({ ...f, records })
+        runOCR(ev.target.result, 'imagingFindings')
       }
       reader.readAsDataURL(file)
     })
@@ -263,12 +310,17 @@ export default function AddPage({ user }) {
     if (secName === 'investigation') return (
       <EditAccordion key={secName} {...sectionProps}>
         {!isRowHidden('investigation', 'results') && <Row fieldKey="results" label="نتائج الفحوصات المخبرية"><textarea placeholder="مثال: CBC: Hb 12, WBC 8000..." value={r.investigations || ''} onChange={e => updateRecord('investigations', e.target.value)} style={{ minHeight: 80 }} /></Row>}
-        {!isRowHidden('investigation', 'upload') && <div className="form-group"><div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 8 }}><label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 8 }}>📷 رفع أو تصوير نتائج الفحوصات</label><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><label style={{ flex: 1, padding: '8px 12px', background: 'var(--royal)', color: 'white', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📁 رفع صورة<input type="file" accept="image/*" multiple onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label><label style={{ flex: 1, padding: '8px 12px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label></div><ImageGrid images={invImages} onRemove={removeInvImage} onOpen={(i) => setLightbox({ images: invImages, index: i })} /></div></div>}
+        {!isRowHidden('investigation', 'upload') && <div className="form-group"><div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 8 }}><label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 8 }}>📷 رفع أو تصوير نتائج الفحوصات</label><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><label style={{ flex: 1, padding: '8px 12px', background: 'var(--royal)', color: 'white', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📁 رفع صورة<input type="file" accept="image/*" multiple onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label><label style={{ flex: 1, padding: '8px 12px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label></div>{ocrLoading && <div style={{ padding: '8px 12px', background: '#e8f4fd', borderRadius: 8, fontSize: 12, color: 'var(--royal)', marginBottom: 8 }}>⏳ جاري قراءة الصورة بالذكاء الاصطناعي...</div>}<ImageGrid images={invImages} onRemove={removeInvImage} onOpen={(i) => setLightbox({ images: invImages, index: i })} /></div></div>}
         {(customRows['investigation'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><textarea value={cr.value} onChange={e => updateRowValue('investigation', cr.key, e.target.value)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('investigation', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
     if (secName === 'imaging') return (
       <EditAccordion key={secName} {...sectionProps}>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 6 }}>📝 ملاحظات التصوير</label>
+          <textarea placeholder="وصف نتائج التصوير..." value={r.imagingFindings || ''} onChange={e => updateRecord('imagingFindings', e.target.value)} style={{ minHeight: 60 }} />
+        </div>
+        {ocrLoading && <div style={{ padding: '8px 12px', background: '#e8f4fd', borderRadius: 8, fontSize: 12, color: 'var(--royal)', marginBottom: 12 }}>⏳ جاري قراءة الصورة بالذكاء الاصطناعي...</div>}
         {imagingTypes.map(item => (
           <div key={item.key} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
