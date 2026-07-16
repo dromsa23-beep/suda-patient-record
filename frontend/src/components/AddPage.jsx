@@ -237,40 +237,59 @@ export default function AddPage({ user }) {
     set('ros', d)
   }
 
-  const handleInvestigationImages = (e) => {
+  const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = dataUrl
+    })
+  }
+
+  const handleInvestigationImages = async (e) => {
     const files = Array.from(e.target.files)
-    files.forEach(file => {
+    for (const file of files) {
       const reader = new FileReader()
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
+        const compressed = await compressImage(ev.target.result)
         const records = [...(f.records || [])]
         if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
         const last = records.length - 1
-        const images = [...(records[last].invImages || []), ev.target.result]
+        const images = [...(records[last].invImages || []), compressed]
         records[last] = { ...records[last], invImages: images }
         setF({ ...f, records })
-        runOCR(ev.target.result, 'investigations')
+        runOCR(compressed, 'investigations')
       }
       reader.readAsDataURL(file)
-    })
+    }
     e.target.value = ''
   }
 
-  const handleImagingImages = (e, key) => {
+  const handleImagingImages = async (e, key) => {
     const files = Array.from(e.target.files)
-    files.forEach(file => {
+    for (const file of files) {
       const reader = new FileReader()
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
+        const compressed = await compressImage(ev.target.result)
         const records = [...(f.records || [])]
         if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
         const last = records.length - 1
-        const images = [...(records[last].imgImages || []), ev.target.result]
+        const images = [...(records[last].imgImages || []), compressed]
         const keys = [...(records[last].imgImageKeys || []), key]
         records[last] = { ...records[last], imgImages: images, imgImageKeys: keys }
         setF({ ...f, records })
-        runOCR(ev.target.result, 'imagingFindings')
+        runOCR(compressed, 'imagingFindings')
       }
       reader.readAsDataURL(file)
-    })
+    }
     e.target.value = ''
   }
 
