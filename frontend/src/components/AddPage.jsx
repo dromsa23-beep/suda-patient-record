@@ -28,6 +28,19 @@ export default function AddPage({ user }) {
   const set = useCallback((k, v) => setF(prev => ({ ...prev, [k]: v })), [])
   const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
 
+  const debouncedSet = useCallback((k, v) => {
+    const timer = setTimeout(() => setF(prev => ({ ...prev, [k]: v })), 50)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const Input = useMemo(() => React.memo(({ value, onChange, ...props }) => (
+    <input value={value} onChange={e => onChange(e.target.value)} {...props} />
+  )), [])
+
+  const TextArea = useMemo(() => React.memo(({ value, onChange, ...props }) => (
+    <textarea value={value} onChange={e => onChange(e.target.value)} {...props} />
+  )), [])
+
   const compressImage = (dataUrl, maxWidth = 1200, quality = 0.8) => {
     return new Promise((resolve) => {
       const img = new Image()
@@ -183,7 +196,7 @@ export default function AddPage({ user }) {
     setLightbox({ images: filtered, index: gi })
   }
 
-  const invImages = f.records?.[f.records.length - 1]?.invImages || []
+  const invImages = useMemo(() => f.records?.[f.records.length - 1]?.invImages || [], [f.records])
 
   const updateRecord = useCallback((field, value) => {
     setF(prev => {
@@ -193,9 +206,10 @@ export default function AddPage({ user }) {
       return { ...prev, records }
     })
   }, [])
-  const r = f.records?.[f.records.length - 1] || {}
+  const r = useMemo(() => f.records?.[f.records.length - 1] || {}, [f.records])
 
   const renderSection = (secName) => {
+    const isActive = activeAccordion === secName
     const sectionProps = {
       title: sectionLabels[secName] || secName,
       name: secName,
@@ -206,6 +220,17 @@ export default function AddPage({ user }) {
       onMoveDown: () => moveSection(secName, 1),
       onDelete: () => deleteSection(secName),
       onAddRow: editMode ? () => { const l = prompt('اسم الحقل:'); if (l?.trim()) addRow(secName, l.trim()) } : undefined
+    }
+
+    if (!isActive) {
+      return (
+        <div key={secName} className="accordion-section">
+          <div className="accordion-header" onClick={() => toggleAccordion(secName)}>
+            <span className="accordion-arrow">▼</span>
+            <span className="accordion-title">{sectionLabels[secName] || secName}</span>
+          </div>
+        </div>
+      )
     }
 
     if (secName === 'personal') return (
