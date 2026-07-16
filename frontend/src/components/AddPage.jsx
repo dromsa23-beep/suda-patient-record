@@ -1,9 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
 import { EditAccordion, EditableRow, Lightbox, ImageGrid } from './shared'
-import { createWorker } from 'tesseract.js'
+
+function RowMemo({ fieldKey, label, editMode, children }) {
+  return editMode ? (
+    <EditableRow editMode={editMode} sectionKey="" fieldKey={fieldKey} label={label} onLabelEdit={() => { }}>
+      {children}
+    </EditableRow>
+  ) : <div className="form-group">{children}</div>
+}
+const Row = React.memo(RowMemo)
 
 export default function AddPage({ user }) {
   const navigate = useNavigate()
@@ -17,157 +25,24 @@ export default function AddPage({ user }) {
   const [hiddenRows, setHiddenRows] = useState({})
   const [customRows, setCustomRows] = useState({})
   const [lightbox, setLightbox] = useState({ images: [], index: null })
-  const [ocrLoading, setOcrLoading] = useState(false)
-  const set = (k, v) => setF({ ...f, [k]: v })
-  const toggleAccordion = (name) => setActiveAccordion(activeAccordion === name ? '' : name)
+  const set = useCallback((k, v) => setF(prev => ({ ...prev, [k]: v })), [])
+  const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
 
-  const parseMedicalResults = (text) => {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-    const sections = []
-    let currentSection = ''
-
-    const medicalTerms = {
-      'cbc': '🩸 CBC (صورة دم كاملة)',
-      'complete blood': '🩸 CBC (صورة دم كاملة)',
-      'blood count': '🩸 CBC (صورة دم كاملة)',
-      'hemoglobin': '🩸 Hemoglobin',
-      'hgb': '🩸 Hemoglobin',
-      'hb': '🩸 Hemoglobin',
-      'wbc': '⚪ WBC (كريات الدم البيضاء)',
-      'white blood': '⚪ WBC (كريات الدم البيضاء)',
-      'leukocyte': '⚪ WBC',
-      'rbc': '🔴 RBC (كريات الدم الحمراء)',
-      'red blood': '🔴 RBC',
-      'platelet': '🟡 Platelet (صفائح الدم)',
-      'plt': '🟡 Platelet',
-      'hematocrit': '🔴 Hematocrit',
-      'hct': '🔴 Hematocrit',
-      'mcv': '📏 MCV',
-      'mch': '📏 MCH',
-      'mchc': '📏 MCHC',
-      'rdw': '📏 RDW',
-      'neutrophil': '🟣 Neutrophil',
-      'lymphocyte': '🔵 Lymphocyte',
-      'monocyte': '🟢 Monocyte',
-      'eosinophil': '🟠 Eosinophil',
-      'basophil': '⚫ Basophil',
-
-      'glucose': '🍬 Glucose (سكر)',
-      'sugar': '🍬 Glucose',
-      'fasting': '🍬 Fasting Glucose',
-      'bun': '🧪 BUN',
-      'creatinine': '🧪 Creatinine',
-      'urea': '🧪 Urea',
-      'uric acid': '🧪 Uric Acid',
-      'cholesterol': '💧 Cholesterol',
-      'triglyceride': '💧 Triglyceride',
-      'hdl': '💧 HDL',
-      'ldl': '💧 LDL',
-      'alt': '🫀 ALT (كبد)',
-      'ast': '🫀 AST (كبد)',
-      'sgpt': '🫀 SGPT',
-      'sgot': '🫀 SGOT',
-      'bilirubin': '🟡 Bilirubin',
-      'albumin': '🧪 Albumin',
-      'protein': '🧪 Total Protein',
-      'calcium': '🦴 Calcium',
-      'phosphate': '🦴 Phosphate',
-      'sodium': '🧂 Sodium',
-      'potassium': '🧂 Potassium',
-      'chloride': '🧂 Chloride',
-      'magnesium': '🧂 Magnesium',
-      'iron': '🔩 Iron',
-      'ferritin': '🔩 Ferritin',
-
-      'tsh': '🦋 TSH (غدة درقية)',
-      'thyroid': '🦋 Thyroid',
-      't3': '🦋 T3',
-      't4': '🦋 T4',
-      'free t4': '🦋 Free T4',
-
-      'ua': '🧪 U/A (تحليل بول)',
-      'urine': '🧪 Urine Analysis',
-      'urinalysis': '🧪 Urine Analysis',
-
-      'esr': '🔴 ESR (tah)'
-
-    }
-
-    lines.forEach(line => {
-      const lower = line.toLowerCase()
-      let found = false
-
-      for (const [key, label] of Object.entries(medicalTerms)) {
-        if (lower.includes(key)) {
-          if (currentSection !== label) {
-            currentSection = label
-            sections.push(`\n${'='.repeat(30)}\n${label}\n${'='.repeat(30)}`)
-          }
-          sections.push(`  ${line}`)
-          found = true
-          break
-        }
+  const compressImage = (dataUrl, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let w = img.width, h = img.height
+        if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
       }
-
-      if (!found && (line.match(/\d/) || line.match(/[<>]/))) {
-        if (currentSection) {
-          sections.push(`  ${line}`)
-        } else {
-          sections.push(`  ${line}`)
-        }
-      }
+      img.src = dataUrl
     })
-
-    if (sections.length === 0) return text.trim()
-
-    let result = sections.join('\n')
-    result = result.replace(/\n{3,}/g, '\n\n')
-
-    return `🔬 === تحليل النتائج الطبية ===\n${result}\n\n📝 النص الأصلي:\n${text.trim()}`
-  }
-
-  const runOCR = async (imageDataUrl, targetField) => {
-    try {
-      setOcrLoading(true)
-      const worker = await createWorker('eng+ara')
-      const { data: { text } } = await worker.recognize(imageDataUrl)
-      await worker.terminate()
-      if (text && text.trim()) {
-        const records = [...(f.records || [])]
-        if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
-        const last = records.length - 1
-        const existing = records[last][targetField] || ''
-        const separator = existing ? '\n---\n' : ''
-        const parsed = parseMedicalResults(text)
-        records[last] = { ...records[last], [targetField]: existing + separator + parsed }
-        setF({ ...f, records })
-        alert('✅ تم قراءة وتحليل الصورة بنجاح')
-      } else {
-        alert('⚠️ لم يتم التعرف على نص في الصورة')
-      }
-    } catch (e) {
-      alert('خطأ في قراءة الصورة: ' + e.message)
-    } finally {
-      setOcrLoading(false)
-    }
-  }
-
-  const openCamera = (callback, ocrTarget) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.capture = 'environment'
-    input.onchange = (e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        callback(ev.target.result)
-        if (ocrTarget) runOCR(ev.target.result, ocrTarget)
-      }
-      reader.readAsDataURL(file)
-    }
-    input.click()
   }
 
   const moveSection = (name, dir) => {
@@ -237,23 +112,6 @@ export default function AddPage({ user }) {
     set('ros', d)
   }
 
-  const compressImage = (dataUrl, maxWidth = 800, quality = 0.7) => {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        let w = img.width, h = img.height
-        if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth }
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      img.src = dataUrl
-    })
-  }
-
   const handleInvestigationImages = async (e) => {
     const files = Array.from(e.target.files)
     for (const file of files) {
@@ -266,7 +124,6 @@ export default function AddPage({ user }) {
         const images = [...(records[last].invImages || []), compressed]
         records[last] = { ...records[last], invImages: images }
         setF({ ...f, records })
-        runOCR(compressed, 'investigations')
       }
       reader.readAsDataURL(file)
     }
@@ -286,7 +143,6 @@ export default function AddPage({ user }) {
         const keys = [...(records[last].imgImageKeys || []), key]
         records[last] = { ...records[last], imgImages: images, imgImageKeys: keys }
         setF({ ...f, records })
-        runOCR(compressed, 'imagingFindings')
       }
       reader.readAsDataURL(file)
     }
@@ -329,19 +185,15 @@ export default function AddPage({ user }) {
 
   const invImages = f.records?.[f.records.length - 1]?.invImages || []
 
-  const updateRecord = (field, value) => {
-    const records = [...(f.records || [])]
-    if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
-    records[records.length - 1] = { ...records[records.length - 1], [field]: value }
-    setF({ ...f, records })
-  }
+  const updateRecord = useCallback((field, value) => {
+    setF(prev => {
+      const records = [...(prev.records || [])]
+      if (!records.length) records.push({ date: new Date().toISOString().slice(0, 10) })
+      records[records.length - 1] = { ...records[records.length - 1], [field]: value }
+      return { ...prev, records }
+    })
+  }, [])
   const r = f.records?.[f.records.length - 1] || {}
-
-  const Row = ({ fieldKey, label, children }) => editMode ? (
-    <EditableRow editMode={editMode} sectionKey="" fieldKey={fieldKey} label={label} onLabelEdit={() => { }}>
-      {children}
-    </EditableRow>
-  ) : <div className="form-group">{children}</div>
 
   const renderSection = (secName) => {
     const sectionProps = {
@@ -435,7 +287,7 @@ export default function AddPage({ user }) {
     if (secName === 'investigation') return (
       <EditAccordion key={secName} {...sectionProps}>
         {!isRowHidden('investigation', 'results') && <Row fieldKey="results" label="نتائج الفحوصات المخبرية"><textarea placeholder="مثال: CBC: Hb 12, WBC 8000..." value={r.investigations || ''} onChange={e => updateRecord('investigations', e.target.value)} style={{ minHeight: 80 }} /></Row>}
-        {!isRowHidden('investigation', 'upload') && <div className="form-group"><div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 8 }}><label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 8 }}>📷 رفع أو تصوير نتائج الفحوصات</label><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><label style={{ flex: 1, padding: '8px 12px', background: 'var(--royal)', color: 'white', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📁 رفع صورة<input type="file" accept="image/*" multiple onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label><label style={{ flex: 1, padding: '8px 12px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label></div>{ocrLoading && <div style={{ padding: '8px 12px', background: '#e8f4fd', borderRadius: 8, fontSize: 12, color: 'var(--royal)', marginBottom: 8 }}>⏳ جاري قراءة الصورة بالذكاء الاصطناعي...</div>}<ImageGrid images={invImages} onRemove={removeInvImage} onOpen={(i) => setLightbox({ images: invImages, index: i })} /></div></div>}
+        {!isRowHidden('investigation', 'upload') && <div className="form-group"><div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 8 }}><label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 8 }}>📷 رفع أو تصوير نتائج الفحوصات</label><div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><label style={{ flex: 1, padding: '8px 12px', background: 'var(--royal)', color: 'white', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📁 رفع صورة<input type="file" accept="image/*" multiple onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label><label style={{ flex: 1, padding: '8px 12px', background: 'var(--gold)', color: 'var(--navy)', borderRadius: 8, cursor: 'pointer', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>📸 تصوير<input type="file" accept="image/*" capture="environment" onChange={e => handleInvestigationImages(e)} style={{ display: 'none' }} /></label></div><ImageGrid images={invImages} onRemove={removeInvImage} onOpen={(i) => setLightbox({ images: invImages, index: i })} /></div></div>}
         {(customRows['investigation'] || []).map(cr => <div key={cr.key} className="form-group" style={{ position: 'relative' }}><label style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>{cr.label}</label><textarea value={cr.value} onChange={e => updateRowValue('investigation', cr.key, e.target.value)} style={{ minHeight: 50 }} /><button onClick={() => deleteRow('investigation', cr.key)} style={{ position: 'absolute', top: 0, left: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: 16, height: 16, cursor: 'pointer', fontSize: 9 }}>✕</button></div>)}
       </EditAccordion>
     )
@@ -445,7 +297,6 @@ export default function AddPage({ user }) {
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy)', display: 'block', marginBottom: 6 }}>📝 ملاحظات التصوير</label>
           <textarea placeholder="وصف نتائج التصوير..." value={r.imagingFindings || ''} onChange={e => updateRecord('imagingFindings', e.target.value)} style={{ minHeight: 60 }} />
         </div>
-        {ocrLoading && <div style={{ padding: '8px 12px', background: '#e8f4fd', borderRadius: 8, fontSize: 12, color: 'var(--royal)', marginBottom: 12 }}>⏳ جاري قراءة الصورة بالذكاء الاصطناعي...</div>}
         {imagingTypes.map(item => (
           <div key={item.key} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
