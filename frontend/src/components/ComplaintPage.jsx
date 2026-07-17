@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { db } from '../firebase'
-import { collection, addDoc, query, where, onSnapshot, orderBy } from 'firebase/firestore'
-import { useEffect } from 'react'
+import { collection, addDoc, query, where, onSnapshot, orderBy, doc, updateDoc } from 'firebase/firestore'
 
 export default function ComplaintPage({ user }) {
   const [text, setText] = useState('')
   const [myComplaints, setMyComplaints] = useState([])
   const [sending, setSending] = useState(false)
   const [toast, setToast] = useState('')
+  const [replyText, setReplyText] = useState({})
 
   useEffect(() => {
     if (!user?.username) return
@@ -39,6 +39,19 @@ export default function ComplaintPage({ user }) {
     setSending(false)
   }
 
+  const replyToAdmin = async (id) => {
+    const text = replyText[id]?.trim()
+    if (!text) return
+    await updateDoc(doc(db, 'complaints', id), {
+      userReply: text,
+      userReplyDate: new Date().toISOString(),
+      status: 'جديد'
+    })
+    setReplyText({ ...replyText, [id]: '' })
+    setToast('تم إرسال ردك')
+    setTimeout(() => setToast(''), 3000)
+  }
+
   return (
     <div className="page-inner">
       {toast && <div style={{ background: 'var(--success)', color: 'white', padding: '10px 16px', borderRadius: 8, marginBottom: 12, textAlign: 'center', fontSize: 13 }}>{toast}</div>}
@@ -61,12 +74,48 @@ export default function ComplaintPage({ user }) {
         <div className="section">
           <div className="section-title"><span className="icon">📋</span> شكواي ({myComplaints.length})</div>
           {myComplaints.map(c => (
-            <div key={c.id} style={{ padding: '10px 14px', background: 'var(--bg)', borderRadius: 8, marginBottom: 8, borderRight: `3px solid ${c.status === 'جديد' ? 'var(--gold)' : 'var(--success)'}` }}>
-              <div style={{ fontSize: 13, marginBottom: 4 }}>{c.text}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-3)' }}>
-                <span>{new Date(c.date).toLocaleDateString('ar-EG')}</span>
-                <span style={{ color: c.status === 'جديد' ? 'var(--gold)' : 'var(--success)', fontWeight: 600 }}>{c.status}</span>
+            <div key={c.id} style={{ padding: '12px 14px', background: 'var(--bg)', borderRadius: 8, marginBottom: 10, borderRight: `3px solid ${c.status === 'جديد' ? 'var(--gold)' : c.status === 'تم الحل' ? 'var(--success)' : 'var(--royal)'}` }}>
+              <div style={{ fontSize: 14, marginBottom: 6, lineHeight: 1.6 }}>{c.text}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>
+                <span>{new Date(c.date).toLocaleDateString('ar-EG')} {new Date(c.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{
+                  color: c.status === 'جديد' ? 'var(--gold)' : c.status === 'تم الحل' ? 'var(--success)' : 'var(--royal)',
+                  fontWeight: 700,
+                  background: c.status === 'جديد' ? '#fff8e1' : c.status === 'تم الحل' ? '#e8f5e9' : '#e3f2fd',
+                  padding: '2px 8px',
+                  borderRadius: 4
+                }}>
+                  {c.status === 'جديد' ? '⏳ جديد' : c.status === 'تم الحل' ? '✅ تم الحل' : '💬 بانتظار ردك'}
+                </span>
               </div>
+
+              {c.adminReply && (
+                <div style={{ background: '#e3f2fd', padding: 10, borderRadius: 8, marginBottom: 8, borderRight: '3px solid var(--royal)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--royal)', marginBottom: 4 }}>💬 رد المدير:</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.6 }}>{c.adminReply}</div>
+                  {c.replyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.replyDate).toLocaleDateString('ar-EG')}</div>}
+                </div>
+              )}
+
+              {c.status === 'تم الحل' && (
+                <div style={{ background: '#e8f5e9', padding: 10, borderRadius: 8, textAlign: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ تم حل المشكلة بنجاح</span>
+                  {c.resolvedDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{new Date(c.resolvedDate).toLocaleDateString('ar-EG')}</div>}
+                </div>
+              )}
+
+              {c.adminReply && c.status !== 'تم الحل' && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <input
+                    placeholder="رد على المدير..."
+                    value={replyText[c.id] || ''}
+                    onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
+                    onKeyDown={e => e.key === 'Enter' && replyToAdmin(c.id)}
+                    style={{ flex: 1, padding: '8px 10px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}
+                  />
+                  <button className="btn btn-primary btn-sm" onClick={() => replyToAdmin(c.id)}>📤 رد</button>
+                </div>
+              )}
             </div>
           ))}
         </div>

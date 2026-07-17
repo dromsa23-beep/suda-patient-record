@@ -79,6 +79,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const [editingAdmin, setEditingAdmin] = useState(null)
   const [editPassword, setEditPassword] = useState('')
   const [expandedUser, setExpandedUser] = useState(null)
+  const [replyText, setReplyText] = useState({})
 
   const patientsByUser = useMemo(() => {
     const groups = {}
@@ -252,8 +253,22 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   }
 
   const resolveComplaint = async (id) => {
-    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل' })
+    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل', resolvedDate: new Date().toISOString() })
     await loadData()
+    showToast('تم إغلاق الشكوى')
+  }
+
+  const replyToComplaint = async (id) => {
+    const text = replyText[id]?.trim()
+    if (!text) return
+    await updateDoc(doc(db, 'complaints', id), {
+      adminReply: text,
+      replyDate: new Date().toISOString(),
+      status: 'بانتظار رد المستخدم'
+    })
+    setReplyText({ ...replyText, [id]: '' })
+    await loadData()
+    showToast('تم إرسال الرد')
   }
 
   const deletePatient = async (id) => {
@@ -545,11 +560,40 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div className="patient-info">
                       <div className="patient-name">{c.text}</div>
-                      <div className="patient-meta">📅 {new Date(c.date).toLocaleDateString('ar')} · {new Date(c.date).toLocaleTimeString('ar')}</div>
+                      <div className="patient-meta">👤 {c.by || 'مستخدم'} · 📅 {new Date(c.date).toLocaleDateString('ar')} {new Date(c.date).toLocaleTimeString('ar')}</div>
                     </div>
-                    <span className={`tag ${c.status === 'جديد' ? 'tag-active' : 'tag-inactive'}`}>{c.status}</span>
+                    <span className={`tag ${c.status === 'جديد' ? 'tag-active' : c.status === 'بانتظار رد المستخدم' ? '' : 'tag-inactive'}`} style={c.status === 'بانتظار رد المستخدم' ? { background: 'var(--gold)', color: 'white' } : {}}>{c.status}</span>
                   </div>
-                  {c.status === 'جديد' && <button className="btn btn-sm btn-accent" onClick={() => resolveComplaint(c.id)}>✅ تم الحل</button>}
+
+                  {c.adminReply && (
+                    <div style={{ background: '#e8f0fe', padding: 10, borderRadius: 8, borderRight: '3px solid var(--royal)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--royal)', marginBottom: 4 }}>💬 رد المدير:</div>
+                      <div style={{ fontSize: 13 }}>{c.adminReply}</div>
+                      {c.replyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.replyDate).toLocaleDateString('ar')}</div>}
+                    </div>
+                  )}
+
+                  {c.userReply && (
+                    <div style={{ background: '#f0f7e8', padding: 10, borderRadius: 8, borderRight: '3px solid var(--success)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--success)', marginBottom: 4 }}>💬 رد المستخدم ({c.by}):</div>
+                      <div style={{ fontSize: 13 }}>{c.userReply}</div>
+                      {c.userReplyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.userReplyDate).toLocaleDateString('ar')}</div>}
+                    </div>
+                  )}
+
+                  {c.status !== 'تم الحل' && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        placeholder="اكتب رد للمستخدم..."
+                        value={replyText[c.id] || ''}
+                        onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
+                        onKeyDown={e => e.key === 'Enter' && replyToComplaint(c.id)}
+                        style={{ flex: 1, padding: '8px 10px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={() => replyToComplaint(c.id)}>📤 رد</button>
+                      <button className="btn btn-sm" style={{ background: 'var(--success)', color: 'white' }} onClick={() => resolveComplaint(c.id)}>✅ تم الحل</button>
+                    </div>
+                  )}
                 </div>
               ))}
               {!complaints.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا توجد شكاوى</div>}
