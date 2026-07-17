@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
 import {
-  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot
+  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot, arrayUnion
 } from 'firebase/firestore'
 import { sectionLabels } from '../constants'
 import jsPDF from 'jspdf'
@@ -80,6 +80,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const [editPassword, setEditPassword] = useState('')
   const [expandedUser, setExpandedUser] = useState(null)
   const [replyText, setReplyText] = useState({})
+  const [openComplaint, setOpenComplaint] = useState(null)
 
   const patientsByUser = useMemo(() => {
     const groups = {}
@@ -253,7 +254,15 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   }
 
   const resolveComplaint = async (id) => {
-    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل', resolvedDate: new Date().toISOString() })
+    await updateDoc(doc(db, 'complaints', id), {
+      status: 'تم الحل',
+      resolvedDate: new Date().toISOString(),
+      messages: arrayUnion({
+        sender: 'system',
+        text: '✅ تم حل المشكلة بنجاح',
+        date: new Date().toISOString()
+      })
+    })
     await loadData()
     showToast('تم إغلاق الشكوى')
   }
@@ -262,8 +271,12 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     const text = replyText[id]?.trim()
     if (!text) return
     await updateDoc(doc(db, 'complaints', id), {
-      adminReply: text,
-      replyDate: new Date().toISOString(),
+      messages: arrayUnion({
+        sender: 'admin',
+        senderName: admin?.name || 'المدير',
+        text: text,
+        date: new Date().toISOString()
+      }),
       status: 'بانتظار رد المستخدم'
     })
     setReplyText({ ...replyText, [id]: '' })
@@ -555,47 +568,83 @@ function AdminDashboard({ admin, onLogout, onBack }) {
             </div>
             <div className="section">
               <div className="section-title"><span className="icon">📋</span> جميع الشكاوى ({complaints.length})</div>
-              {complaints.map(c => (
-                <div key={c.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div className="patient-info">
-                      <div className="patient-name">{c.text}</div>
-                      <div className="patient-meta">👤 {c.by || 'مستخدم'} · 📅 {new Date(c.date).toLocaleDateString('ar')} {new Date(c.date).toLocaleTimeString('ar')}</div>
+              {complaints.map(c => {
+                const isOpen = openComplaint === c.id
+                const msgs = c.messages || []
+                const st = c.status === 'جديد' ? { bg: '#fff8e1', color: '#f9a825', label: '⏳ جديد' } : c.status === 'تم الحل' ? { bg: '#e8f5e9', color: '#2e7d32', label: '✅ تم الحل' } : { bg: '#e3f2fd', color: '#1565c0', label: '💬...' }
+                return (
+                  <div key={c.id} style={{ marginBottom: 12, background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: isOpen ? '2px solid var(--royal)' : '1px solid var(--border)' }}>
+                    {/* Header */}
+                    <div
+                      onClick={() => setOpenComplaint(isOpen ? null : c.id)}
+                      style={{ padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{c.text}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>👤 {c.by || 'مستخدم'} · 📅 {new Date(c.date).toLocaleDateString('ar-EG')} · {msgs.length} رسالة</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, padding: '3px 10px', borderRadius: 10, whiteSpace: 'nowrap' }}>{st.label}</span>
                     </div>
-                    <span className={`tag ${c.status === 'جديد' ? 'tag-active' : c.status === 'بانتظار رد المستخدم' ? '' : 'tag-inactive'}`} style={c.status === 'بانتظار رد المستخدم' ? { background: 'var(--gold)', color: 'white' } : {}}>{c.status}</span>
+
+                    {/* Chat Thread */}
+                    {isOpen && (
+                      <div style={{ borderTop: '1px solid var(--border)', background: 'white' }}>
+                        <div style={{ maxHeight: 400, overflowY: 'auto', padding: 12 }}>
+                          {msgs.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: 20, fontSize: 13 }}>لا توجد رسائل بعد</div>}
+                          {msgs.map((m, i) => {
+                            const isSystem = m.sender === 'system'
+                            const isAdmin = m.sender === 'admin'
+                            if (isSystem) {
+                              return (
+                                <div key={i} style={{ textAlign: 'center', margin: '10px 0' }}>
+                                  <span style={{ fontSize: 11, background: '#e8f5e9', color: 'var(--success)', padding: '4px 14px', borderRadius: 10 }}>{m.text}</span>
+                                </div>
+                              )
+                            }
+                            return (
+                              <div key={i} style={{ display: 'flex', justifyContent: isAdmin ? 'flex-start' : 'flex-end', marginBottom: 8 }}>
+                                <div style={{ maxWidth: '80%' }}>
+                                  <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, textAlign: isAdmin ? 'right' : 'left' }}>
+                                    {m.senderName || (isAdmin ? 'المدير' : 'المستخدم')} · {new Date(m.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  <div style={{
+                                    padding: '8px 12px',
+                                    borderRadius: isAdmin ? '12px 12px 12px 2px' : '12px 12px 2px 12px',
+                                    background: isAdmin ? 'var(--royal)' : '#f0f0f0',
+                                    color: isAdmin ? 'white' : 'var(--text-1)',
+                                    fontSize: 13,
+                                    lineHeight: 1.6,
+                                    wordBreak: 'break-word'
+                                  }}>
+                                    {m.text}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Reply + Actions */}
+                        {c.status !== 'تم الحل' && (
+                          <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                              <input
+                                placeholder="اكتب رد..."
+                                value={replyText[c.id] || ''}
+                                onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
+                                onKeyDown={e => e.key === 'Enter' && replyToComplaint(c.id)}
+                                style={{ flex: 1, padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
+                              />
+                              <button className="btn btn-primary btn-sm" onClick={() => replyToComplaint(c.id)}>📤 رد</button>
+                            </div>
+                            <button className="btn btn-full" style={{ background: 'var(--success)', color: 'white', fontSize: 13 }} onClick={() => resolveComplaint(c.id)}>✅ تم الحل — إغلاق الشكوى</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-
-                  {c.adminReply && (
-                    <div style={{ background: '#e8f0fe', padding: 10, borderRadius: 8, borderRight: '3px solid var(--royal)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--royal)', marginBottom: 4 }}>💬 رد المدير:</div>
-                      <div style={{ fontSize: 13 }}>{c.adminReply}</div>
-                      {c.replyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.replyDate).toLocaleDateString('ar')}</div>}
-                    </div>
-                  )}
-
-                  {c.userReply && (
-                    <div style={{ background: '#f0f7e8', padding: 10, borderRadius: 8, borderRight: '3px solid var(--success)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--success)', marginBottom: 4 }}>💬 رد المستخدم ({c.by}):</div>
-                      <div style={{ fontSize: 13 }}>{c.userReply}</div>
-                      {c.userReplyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.userReplyDate).toLocaleDateString('ar')}</div>}
-                    </div>
-                  )}
-
-                  {c.status !== 'تم الحل' && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input
-                        placeholder="اكتب رد للمستخدم..."
-                        value={replyText[c.id] || ''}
-                        onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
-                        onKeyDown={e => e.key === 'Enter' && replyToComplaint(c.id)}
-                        style={{ flex: 1, padding: '8px 10px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}
-                      />
-                      <button className="btn btn-primary btn-sm" onClick={() => replyToComplaint(c.id)}>📤 رد</button>
-                      <button className="btn btn-sm" style={{ background: 'var(--success)', color: 'white' }} onClick={() => resolveComplaint(c.id)}>✅ تم الحل</button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                )
+              })}
               {!complaints.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا توجد شكاوى</div>}
             </div>
           </div>}

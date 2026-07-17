@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { db } from '../firebase'
-import { collection, addDoc, query, where, onSnapshot, orderBy, doc, updateDoc } from 'firebase/firestore'
+import { collection, addDoc, query, where, onSnapshot, orderBy, doc, updateDoc, arrayUnion } from 'firebase/firestore'
 
 export default function ComplaintPage({ user }) {
   const [text, setText] = useState('')
@@ -8,6 +8,8 @@ export default function ComplaintPage({ user }) {
   const [sending, setSending] = useState(false)
   const [toast, setToast] = useState('')
   const [replyText, setReplyText] = useState({})
+  const [openChat, setOpenChat] = useState(null)
+  const chatEndRef = useRef(null)
 
   useEffect(() => {
     if (!user?.username) return
@@ -18,6 +20,12 @@ export default function ComplaintPage({ user }) {
     return () => unsub()
   }, [user?.username])
 
+  useEffect(() => {
+    if (openChat && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [openChat, myComplaints])
+
   const send = async () => {
     if (!text.trim()) return
     setSending(true)
@@ -26,7 +34,13 @@ export default function ComplaintPage({ user }) {
         text: text.trim(),
         by: user.username || 'مستخدم',
         date: new Date().toISOString(),
-        status: 'جديد'
+        status: 'جديد',
+        messages: [{
+          sender: 'user',
+          senderName: user.name || user.username,
+          text: text.trim(),
+          date: new Date().toISOString()
+        }]
       })
       setText('')
       setToast('تم إرسال شكواك بنجاح')
@@ -39,17 +53,103 @@ export default function ComplaintPage({ user }) {
     setSending(false)
   }
 
-  const replyToAdmin = async (id) => {
-    const text = replyText[id]?.trim()
-    if (!text) return
-    await updateDoc(doc(db, 'complaints', id), {
-      userReply: text,
-      userReplyDate: new Date().toISOString(),
+  const replyToAdmin = async (complaintId) => {
+    const msg = replyText[complaintId]?.trim()
+    if (!msg) return
+    await updateDoc(doc(db, 'complaints', complaintId), {
+      messages: arrayUnion({
+        sender: 'user',
+        senderName: user.name || user.username,
+        text: msg,
+        date: new Date().toISOString()
+      }),
       status: 'جديد'
     })
-    setReplyText({ ...replyText, [id]: '' })
-    setToast('تم إرسال ردك')
-    setTimeout(() => setToast(''), 3000)
+    setReplyText({ ...replyText, [complaintId]: '' })
+  }
+
+  const getStatusColor = (status) => {
+    if (status === 'جديد') return { bg: '#fff8e1', color: '#f9a825', label: '⏳ جديد' }
+    if (status === 'تم الحل') return { bg: '#e8f5e9', color: '#2e7d32', label: '✅ تم الحل' }
+    return { bg: '#e3f2fd', color: '#1565c0', label: '💬...' }
+  }
+
+  const ComplaintCard = ({ c }) => {
+    const st = getStatusColor(c.status)
+    const isOpen = openChat === c.id
+    const messages = c.messages || []
+
+    return (
+      <div style={{ marginBottom: 12, background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: isOpen ? '2px solid var(--royal)' : '1px solid var(--border)' }}>
+        {/* Header */}
+        <div
+          onClick={() => setOpenChat(isOpen ? null : c.id)}
+          style={{ padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{c.text}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              {new Date(c.date).toLocaleDateString('ar-EG')} · {messages.length} رسالة
+            </div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, padding: '3px 10px', borderRadius: 10, whiteSpace: 'nowrap' }}>{st.label}</span>
+        </div>
+
+        {/* Chat Thread */}
+        {isOpen && (
+          <div style={{ borderTop: '1px solid var(--border)', background: 'white' }}>
+            <div style={{ maxHeight: 350, overflowY: 'auto', padding: 12 }}>
+              {messages.map((m, i) => {
+                const isUser = m.sender === 'user'
+                const isSystem = m.sender === 'system'
+                if (isSystem) {
+                  return (
+                    <div key={i} style={{ textAlign: 'center', margin: '8px 0' }}>
+                      <span style={{ fontSize: 11, background: '#e8f5e9', color: 'var(--success)', padding: '4px 14px', borderRadius: 10 }}>{m.text}</span>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
+                    <div style={{ maxWidth: '80%' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2, textAlign: isUser ? 'left' : 'right' }}>
+                        {isUser ? 'أنت' : 'المدير'} · {new Date(m.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div style={{
+                        padding: '8px 12px',
+                        borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                        background: isUser ? 'var(--royal)' : '#f0f0f0',
+                        color: isUser ? 'white' : 'var(--text-1)',
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                        wordBreak: 'break-word'
+                      }}>
+                        {m.text}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Reply Input */}
+            {c.status !== 'تم الحل' && (
+              <div style={{ padding: 10, borderTop: '1px solid var(--border)', display: 'flex', gap: 6 }}>
+                <input
+                  placeholder="اكتب رد..."
+                  value={replyText[c.id] || ''}
+                  onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
+                  onKeyDown={e => e.key === 'Enter' && replyToAdmin(c.id)}
+                  style={{ flex: 1, padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={() => replyToAdmin(c.id)}>📤</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -57,67 +157,22 @@ export default function ComplaintPage({ user }) {
       {toast && <div style={{ background: 'var(--success)', color: 'white', padding: '10px 16px', borderRadius: 8, marginBottom: 12, textAlign: 'center', fontSize: 13 }}>{toast}</div>}
 
       <div className="section">
-        <div className="section-title"><span className="icon">💬</span> تقديم شكوى أو اقتراح</div>
-        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px' }}>شاركنا ملاحظاتك أو اقتراحاتك لتحسين الخدمة</p>
+        <div className="section-title"><span className="icon">💬</span> شكوى جديدة</div>
         <textarea
           placeholder="اكتب شكواك أو اقتراحك هنا..."
           value={text}
           onChange={e => setText(e.target.value)}
-          style={{ width: '100%', padding: 12, border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', minHeight: 120, resize: 'vertical', fontSize: 14, direction: 'rtl' }}
+          style={{ width: '100%', padding: 12, border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', minHeight: 100, resize: 'vertical', fontSize: 14, direction: 'rtl' }}
         />
         <button className="btn btn-primary btn-full" style={{ marginTop: 10 }} onClick={send} disabled={sending || !text.trim()}>
-          {sending ? '⏳ جاري الإرسال...' : '📤 إرسال الشكوى'}
+          {sending ? '⏳ جاري الإرسال...' : '📤 إرسال'}
         </button>
       </div>
 
       {myComplaints.length > 0 && (
         <div className="section">
           <div className="section-title"><span className="icon">📋</span> شكواي ({myComplaints.length})</div>
-          {myComplaints.map(c => (
-            <div key={c.id} style={{ padding: '12px 14px', background: 'var(--bg)', borderRadius: 8, marginBottom: 10, borderRight: `3px solid ${c.status === 'جديد' ? 'var(--gold)' : c.status === 'تم الحل' ? 'var(--success)' : 'var(--royal)'}` }}>
-              <div style={{ fontSize: 14, marginBottom: 6, lineHeight: 1.6 }}>{c.text}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>
-                <span>{new Date(c.date).toLocaleDateString('ar-EG')} {new Date(c.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
-                <span style={{
-                  color: c.status === 'جديد' ? 'var(--gold)' : c.status === 'تم الحل' ? 'var(--success)' : 'var(--royal)',
-                  fontWeight: 700,
-                  background: c.status === 'جديد' ? '#fff8e1' : c.status === 'تم الحل' ? '#e8f5e9' : '#e3f2fd',
-                  padding: '2px 8px',
-                  borderRadius: 4
-                }}>
-                  {c.status === 'جديد' ? '⏳ جديد' : c.status === 'تم الحل' ? '✅ تم الحل' : '💬 بانتظار ردك'}
-                </span>
-              </div>
-
-              {c.adminReply && (
-                <div style={{ background: '#e3f2fd', padding: 10, borderRadius: 8, marginBottom: 8, borderRight: '3px solid var(--royal)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--royal)', marginBottom: 4 }}>💬 رد المدير:</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.6 }}>{c.adminReply}</div>
-                  {c.replyDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{new Date(c.replyDate).toLocaleDateString('ar-EG')}</div>}
-                </div>
-              )}
-
-              {c.status === 'تم الحل' && (
-                <div style={{ background: '#e8f5e9', padding: 10, borderRadius: 8, textAlign: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ تم حل المشكلة بنجاح</span>
-                  {c.resolvedDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{new Date(c.resolvedDate).toLocaleDateString('ar-EG')}</div>}
-                </div>
-              )}
-
-              {c.adminReply && c.status !== 'تم الحل' && (
-                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                  <input
-                    placeholder="رد على المدير..."
-                    value={replyText[c.id] || ''}
-                    onChange={e => setReplyText({ ...replyText, [c.id]: e.target.value })}
-                    onKeyDown={e => e.key === 'Enter' && replyToAdmin(c.id)}
-                    style={{ flex: 1, padding: '8px 10px', border: '1.5px solid var(--border)', borderRadius: 6, fontSize: 12, fontFamily: 'inherit' }}
-                  />
-                  <button className="btn btn-primary btn-sm" onClick={() => replyToAdmin(c.id)}>📤 رد</button>
-                </div>
-              )}
-            </div>
-          ))}
+          {myComplaints.map(c => <ComplaintCard key={c.id} c={c} />)}
         </div>
       )}
     </div>
