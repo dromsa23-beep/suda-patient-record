@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
-import { db } from '../firebase'
-import { collection, getDocs } from 'firebase/firestore'
+import { db, auth as firebaseAuth } from '../firebase'
+import { collection, getDocs, addDoc } from 'firebase/firestore'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '../api'
 
 export default function LoginPage({ onLogin, onRegister }) {
@@ -26,6 +27,21 @@ export default function LoginPage({ onLogin, onRegister }) {
       })
       if (found) {
         const a = found.data()
+        const adminEmail = 'admin_' + a.username + '@suda.app'
+        try {
+          await signInWithEmailAndPassword(firebaseAuth, adminEmail, creds.password)
+        } catch {
+          try {
+            await createUserWithEmailAndPassword(firebaseAuth, adminEmail, creds.password)
+            await addDoc(collection(db, 'users'), {
+              name: a.name, username: a.username, role: 'admin', approved: true,
+              uid: (await import('firebase/auth')).getAuth().currentUser.uid,
+              createdAt: new Date().toISOString(), migrated: true
+            })
+          } catch {
+            try { await signInWithEmailAndPassword(firebaseAuth, adminEmail, creds.password) } catch {}
+          }
+        }
         localStorage.setItem('sudaAdmin', JSON.stringify({ id: found.id, username: a.username, name: a.name, role: a.role }))
         navigate('/admin')
         return

@@ -13,17 +13,48 @@ function genId() { return Date.now().toString(36) + Math.random().toString(36).s
 const authAPI = {
   login: async (data) => {
     const email = data.username + '@suda.app';
-    let cred;
+    let cred = null;
+
     try {
       cred = await signInWithEmailAndPassword(firebaseAuth, email, data.password);
-    } catch (e) {
-      throw { response: { data: { detail: 'اسم المستخدم أو كلمة المرور خاطئة' } } };
+    } catch (firebaseError) {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const legacyUser = usersSnap.docs.find(d => {
+        const u = d.data();
+        return u.username === data.username && u.password === data.password;
+      });
+      if (legacyUser) {
+        try {
+          cred = await createUserWithEmailAndPassword(firebaseAuth, email, data.password);
+          const lu = legacyUser.data();
+          const uid = cred.user.uid;
+          await addDoc(collection(db, 'users'), {
+            name: lu.name, username: lu.username, email: lu.email, phone: lu.phone,
+            clinic: lu.clinic, specialty: lu.specialty, role: lu.role || 'user',
+            approved: lu.approved, subscriptionStart: lu.subscriptionStart,
+            subscriptionEnd: lu.subscriptionEnd, createdAt: lu.createdAt, uid,
+            migrated: true
+          });
+        } catch (migErr) {
+          if (migErr.code === 'auth/email-already-in-use') {
+            try {
+              cred = await signInWithEmailAndPassword(firebaseAuth, email, data.password);
+            } catch { throw { response: { data: { detail: 'حدث خطأ. يرجى المحاولة مرة أخرى أو تغيير كلمة المرور' } } }; }
+          } else {
+            throw { response: { data: { detail: 'خطأ في الترحيل: ' + migErr.message } } };
+          }
+        }
+      } else {
+        throw { response: { data: { detail: 'اسم المستخدم أو كلمة المرور خاطئة' } } };
+      }
     }
+
     const uid = cred.user.uid;
-    const userDoc = await getDoc(doc(db, 'users', uid));
-    if (!userDoc.exists()) {
+    const usersSnap2 = await getDocs(collection(db, 'users'));
+    const userDoc = usersSnap2.docs.find(d => d.data().uid === uid);
+    if (!userDoc) {
       await signOut(firebaseAuth);
-      throw { response: { data: { detail: 'الحساب غير موجود' } } };
+      throw { response: { data: { detail: 'الحساب غير موجود في النظام' } } };
     }
     const u = userDoc.data();
     if (u.approved === false) {
@@ -55,7 +86,7 @@ const authAPI = {
     } else {
       await addDoc(collection(db, 'sessions'), { uid, deviceId, createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000, lastActive: Date.now() });
     }
-    return { data: { user: { id: uid, ...u } } };
+    return { data: { user: { id: uid, ...u, userDocId: userDoc.id } } };
   },
   register: async (data) => {
     const snap = await getDocs(collection(db, 'users'));
