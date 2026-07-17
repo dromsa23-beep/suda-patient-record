@@ -1,11 +1,10 @@
 import { db, auth as firebaseAuth } from './firebase';
 import {
-  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit as firestoreLimit
+  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit as firestoreLimit, setDoc
 } from 'firebase/firestore';
 import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
 } from 'firebase/auth';
-import { setDoc } from 'firebase/firestore';
 
 const MAX_SESSIONS = 3;
 
