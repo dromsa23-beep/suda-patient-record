@@ -22,20 +22,20 @@ export default function App() {
   const location = useLocation()
 
   useEffect(() => {
+    const saved = localStorage.getItem('sudaUser')
+    let savedUser = null
+    try { savedUser = saved ? JSON.parse(saved) : null } catch { savedUser = null }
+
     const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      if (fbUser) {
-        const saved = localStorage.getItem('sudaUser')
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved)
-            if (parsed && parsed.username) {
-              setUser(parsed)
-              setAuthReady(true)
-              if (location.pathname === '/login') navigate('/')
-              return
-            }
-          } catch {}
-        }
+      if (fbUser && savedUser && savedUser.username) {
+        setUser(savedUser)
+        setAuthReady(true)
+        if (location.pathname === '/login') navigate('/')
+      } else if (!fbUser && savedUser && savedUser.username && savedUser.id) {
+        localStorage.removeItem('sudaUser')
+        setUser(null)
+        setAuthReady(true)
+      } else if (fbUser && !savedUser) {
         try {
           const snap = await getDocs(query(collection(db, 'users'), where('uid', '==', fbUser.uid)))
           if (!snap.empty) {
@@ -46,11 +46,11 @@ export default function App() {
             if (location.pathname === '/login') navigate('/')
           }
         } catch {}
+        setAuthReady(true)
       } else {
-        localStorage.removeItem('sudaUser')
         setUser(null)
+        setAuthReady(true)
       }
-      setAuthReady(true)
     })
     return () => unsub()
   }, [])
