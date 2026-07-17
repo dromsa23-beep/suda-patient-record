@@ -9,6 +9,7 @@ import DetailsPage from './components/DetailsPage'
 import SurgeryPage from './components/SurgeryPage'
 import ClinicPage from './components/ClinicPage'
 import StatsPage from './components/StatsPage'
+import ComplaintPage from './components/ComplaintPage'
 import AdminPage from './components/AdminPage'
 import { navItems } from './constants'
 
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="/surgery" element={<SurgeryPage user={user} />} />
           <Route path="/clinic" element={<ClinicPage user={user} />} />
           <Route path="/stats" element={<StatsPage user={user} />} />
+          <Route path="/complaint" element={<ComplaintPage user={user} />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage onLogin={handleLogin} onRegister={handleRegister} />} />
         </Routes>

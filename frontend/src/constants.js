@@ -107,5 +107,6 @@ export const navItems = [
   { path: '/add', icon: '➕', label: 'إضافة' },
   { path: '/surgery', icon: '🩺', label: 'عمليات' },
   { path: '/clinic', icon: '🏥', label: 'عيادة' },
-  { path: '/stats', icon: '📊', label: 'إحصائيات' }
+  { path: '/stats', icon: '📊', label: 'إحصائيات' },
+  { path: '/complaint', icon: '💬', label: 'شكوى' }
 ]
