@@ -92,6 +92,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     finally { setLoading(false) }
   }
   useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() }, [tab])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
 
@@ -301,7 +302,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
           {tab === 'approvals' && <div>
             <div className="section">
-              <div className="section-title"><span className="icon">✅</span> طلبات الموافقة ({pendingUsers})</div>
+              <div className="section-title"><span className="icon">✅</span> طلبات الموافقة ({pendingUsers}) <button onClick={loadData} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }} title="تحديث">🔄</button></div>
               {users.filter(u => u.approved === false).map(u => (
                 <div key={u.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
