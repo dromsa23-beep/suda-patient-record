@@ -13,26 +13,25 @@ import ComplaintPage from './components/ComplaintPage'
 import AdminPage from './components/AdminPage'
 import { navItems } from './constants'
 
+function getInitialUser() {
+  try {
+    const saved = localStorage.getItem('sudaUser')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (parsed && parsed.username && parsed.approved !== false) return parsed
+      localStorage.removeItem('sudaUser')
+    }
+  } catch { localStorage.removeItem('sudaUser') }
+  return null
+}
+
 export default function App() {
-  const [user, setUser] = useState(null)
-  const [ready, setReady] = useState(false)
+  const [user, setUser] = useState(getInitialUser)
   const navigate = useNavigate()
   const location = useLocation()
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('sudaUser')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed && parsed.username && parsed.approved !== false) {
-          setUser(parsed)
-          if (location.pathname === '/login') navigate('/')
-        } else {
-          localStorage.removeItem('sudaUser')
-        }
-      }
-    } catch { localStorage.removeItem('sudaUser') }
-    setReady(true)
+    if (user && location.pathname === '/login') navigate('/')
   }, [])
 
   const handleLogin = async (u, p) => {
@@ -52,13 +51,6 @@ export default function App() {
     setUser(null)
     navigate('/login')
   }
-
-  if (!ready) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-    <div style={{ textAlign: 'center' }}>
-      <div className="login-logo">🏥</div>
-      <p style={{ color: 'var(--text-2)', marginTop: 12 }}>جاري التحميل...</p>
-    </div>
-  </div>
 
   if (!user) return <Routes>
     <Route path="/admin" element={<AdminPage />} />
