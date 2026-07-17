@@ -56,7 +56,7 @@ export default function AddPage({ user }) {
 
   const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
 
-  const compressImage = (dataUrl, maxWidth = 1200, quality = 0.8) => {
+  const compressImage = (dataUrl, maxWidth = 800, quality = 0.5) => {
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = () => {
@@ -121,9 +121,17 @@ export default function AddPage({ user }) {
     try {
       const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown' }
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
+      const jsonSize = new TextEncoder().encode(JSON.stringify(data)).length
+      if (jsonSize > 900000) {
+        alert('⚠️ حجم البيانات كبير جداً (' + Math.round(jsonSize / 1024) + 'KB). يرجى حذف بعض الصور قبل الحفظ.')
+        return
+      }
       if (id) { await patientsApi.update(id, data); alert('تم التحديث'); navigate(-1) }
       else { await patientsApi.create(data); alert('تم الحفظ'); navigate('/search') }
-    } catch (e) { alert('خطأ: ' + (e.response?.data?.detail || e.message)) }
+    } catch (e) {
+      console.error('Save error:', e)
+      alert('خطأ في الحفظ: ' + (e.message || 'تأكد من اتصال الإنترنت وحاول مرة أخرى'))
+    }
   }
 
   const togglePmh = (v) => {
