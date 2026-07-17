@@ -92,14 +92,6 @@ const authAPI = {
     const snap = await getDocs(collection(db, 'users'));
     const exists = snap.docs.find(d => d.data().username === data.username);
     if (exists) throw { response: { data: { detail: 'اسم المستخدم موجود بالفعل' } } };
-    const email = data.username + '@suda.app';
-    let cred;
-    try {
-      cred = await createUserWithEmailAndPassword(firebaseAuth, email, data.password);
-    } catch (e) {
-      throw { response: { data: { detail: 'خطأ في إنشاء الحساب: ' + e.message } } };
-    }
-    const uid = cred.user.uid;
     const now = new Date();
     const subEnd = new Date(now);
     subEnd.setMonth(subEnd.getMonth() + 1);
@@ -109,17 +101,16 @@ const authAPI = {
       phone: data.phone || '',
       clinic: data.clinic || '',
       username: data.username,
+      password: data.password,
       specialty: data.specialty || '',
-      uid,
       approved: false,
       role: 'user',
       subscriptionStart: now.toISOString(),
       subscriptionEnd: subEnd.toISOString(),
       createdAt: now.toISOString()
     };
-    await setDoc(doc(db, 'users', uid), userData);
-    await signOut(firebaseAuth);
-    return { data: { message: 'تم التسجيل' } };
+    const docRef = await addDoc(collection(db, 'users'), userData);
+    return { data: { message: 'تم التسجيل', id: docRef.id } };
   },
   logout: async () => {
     const user = firebaseAuth.currentUser;
