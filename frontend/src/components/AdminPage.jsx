@@ -5,6 +5,7 @@ import {
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot
 } from 'firebase/firestore'
 import { sectionLabels } from '../constants'
+import jsPDF from 'jspdf'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
 
@@ -94,58 +95,129 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     return u ? (u.name || u.username) : uid
   }
 
-  const downloadPatient = (p) => {
-    const lines = []
-    lines.push(`═══════════════════════════════════════`)
-    lines.push(`  سجل المريض: ${p.name}`)
-    lines.push(`═══════════════════════════════════════`)
-    lines.push(``)
-    lines.push(`📋 البيانات الشخصية`)
-    lines.push(`   الاسم: ${p.name}`)
-    lines.push(`   العمر: ${p.age} سنة`)
-    lines.push(`   الجنس: ${p.gender}`)
-    lines.push(`   الهاتف: ${p.phone}`)
-    lines.push(`   العنوان: ${p.address || '—'}`)
-    lines.push(`   فصيلة الدم: ${p.bloodType || '—'}`)
-    lines.push(`   المهنة: ${p.occupation || '—'}`)
-    lines.push(`   جهة الاتصال: ${p.emergency || '—'}`)
-    lines.push(``)
-    if (p.hpi) { lines.push(`🗣️ الشكوى الرئيسية`); lines.push(`   ${p.hpi}`); lines.push(``) }
-    if (p.chronicMeds) { lines.push(`💊 الأدوية المزمنة`); lines.push(`   ${p.chronicMeds}`); lines.push(``) }
-    if (p.drugAllergies) { lines.push(`⚠️ الحساسية الدوائية`); lines.push(`   ${p.drugAllergies}`); lines.push(``) }
-    if (p.socialHistory) { lines.push(`🏠 التاريخ الاجتماعي`); lines.push(`   ${p.socialHistory}`); lines.push(``) }
-    if (p.surgicalHistory) { lines.push(`🔪 التاريخ الجراحي`); lines.push(`   ${p.surgicalHistory}`); lines.push(``) }
-    if (p.pmh?.length) { lines.push(`📋 التاريخ المرضي السابق`); p.pmh.forEach(m => lines.push(`   • ${m}`)); lines.push(``) }
-    if (p.fh?.length) { lines.push(`👨‍👩‍👧‍👦 التاريخ العائلي`); p.fh.forEach(f => lines.push(`   • ${f}`)); lines.push(``) }
-    const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
-    if (rosItems.length) { lines.push(`🔬 مراجعة الأجهزة`); rosItems.forEach(([k, v]) => { lines.push(`   ${k}: ${Array.isArray(v) ? v.join(', ') : v}`) }); lines.push(``) }
-    if (p.records?.length) {
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-      lines.push(`📅 السجلات الطبية (${p.records.length})`)
-      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-      p.records.forEach((r, i) => {
-        lines.push(``)
-        lines.push(`   ── السجل #${i + 1} ──`)
-        lines.push(`   التاريخ: ${r.date}`)
-        lines.push(`   التشخيص: ${r.primaryDx || '—'}`)
-        lines.push(`   الشكوى: ${r.chiefComplaint || '—'}`)
-        if (r.treatmentPlan) lines.push(`   خطة العلاج: ${r.treatmentPlan}`)
-        if (r.followUp) lines.push(`   المتابعة: ${r.followUp}`)
-        lines.push(``)
-      })
+  const downloadPatient = async (p) => {
+    try {
+      const docPdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
+      const pageW = 210
+      const margin = 15
+      const contentW = pageW - margin * 2
+      let y = 20
+
+      const addText = (text, size = 11, isBold = false) => {
+        if (!text) return
+        docPdf.setFontSize(size)
+        docPdf.setFont('helvetica', isBold ? 'bold' : 'normal')
+        const lines = docPdf.splitTextToSize(String(text), contentW)
+        lines.forEach(line => {
+          if (y > 275) { docPdf.addPage(); y = 20 }
+          docPdf.text(line, pageW - margin, y, { align: 'right' })
+          y += size * 0.5
+        })
+      }
+
+      const addSection = (title, content) => {
+        if (!content) return
+        if (y > 260) { docPdf.addPage(); y = 20 }
+        docPdf.setFillColor(41, 65, 122)
+        docPdf.roundedRect(margin, y - 4, contentW, 8, 1, 1, 'F')
+        docPdf.setTextColor(255, 255, 255)
+        docPdf.setFontSize(11)
+        docPdf.setFont('helvetica', 'bold')
+        docPdf.text(title, pageW - margin, y + 1, { align: 'right' })
+        docPdf.setTextColor(0, 0, 0)
+        y += 10
+        addText(content)
+        y += 3
+      }
+
+      const addImageToPdf = (base64, title) => {
+        if (!base64) return
+        try {
+          if (y > 200) { docPdf.addPage(); y = 20 }
+          docPdf.setFillColor(240, 240, 240)
+          docPdf.roundedRect(margin, y - 2, contentW, 6, 1, 1, 'F')
+          docPdf.setFontSize(9)
+          docPdf.setFont('helvetica', 'bold')
+          docPdf.text(title, pageW - margin, y + 2, { align: 'right' })
+          y += 8
+          const imgW = contentW
+          const imgH = imgW * 0.6
+          if (y + imgH > 275) { docPdf.addPage(); y = 20 }
+          docPdf.addImage(base64, 'JPEG', margin, y, imgW, imgH)
+          y += imgH + 5
+        } catch (e) { console.warn('Image skip:', e) }
+      }
+
+      // Title
+      docPdf.setFillColor(41, 65, 122)
+      docPdf.rect(0, 0, pageW, 35, 'F')
+      docPdf.setTextColor(255, 255, 255)
+      docPdf.setFontSize(20)
+      docPdf.setFont('helvetica', 'bold')
+      docPdf.text(`Patient: ${p.name || '—'}`, pageW - margin, 18, { align: 'right' })
+      docPdf.setFontSize(10)
+      docPdf.text(`Export: ${new Date().toLocaleDateString('en-US')}`, pageW - margin, 28, { align: 'right' })
+      docPdf.setTextColor(0, 0, 0)
+      y = 42
+
+      // Personal Info
+      addSection('Personal Information', [
+        `Name: ${p.name}`,
+        `Age: ${p.age} years`,
+        `Gender: ${p.gender}`,
+        `Phone: ${p.phone}`,
+        `Address: ${p.address || '—'}`,
+        `Blood Type: ${p.bloodType || '—'}`,
+        `Occupation: ${p.occupation || '—'}`,
+        `Emergency: ${p.emergency || '—'}`,
+      ].join('\n'))
+
+      if (p.hpi) addSection('Chief Complaint (HPI)', p.hpi)
+      if (p.chronicMeds) addSection('Chronic Medications', p.chronicMeds)
+      if (p.drugAllergies) addSection('Drug Allergies', p.drugAllergies)
+      if (p.socialHistory) addSection('Social History', p.socialHistory)
+      if (p.surgicalHistory) addSection('Surgical History', p.surgicalHistory)
+      if (p.pmh?.length) addSection('Past Medical History', p.pmh.map(m => `• ${m}`).join('\n'))
+      if (p.fh?.length) addSection('Family History', p.fh.map(f => `• ${f}`).join('\n'))
+
+      const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
+      if (rosItems.length) {
+        addSection('Review of Systems', rosItems.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n'))
+      }
+
+      // Records
+      if (p.records?.length) {
+        p.records.forEach((r, i) => {
+          if (y > 250) { docPdf.addPage(); y = 20 }
+          docPdf.setFillColor(100, 150, 200)
+          docPdf.roundedRect(margin, y - 2, contentW, 8, 1, 1, 'F')
+          docPdf.setTextColor(255, 255, 255)
+          docPdf.setFontSize(12)
+          docPdf.setFont('helvetica', 'bold')
+          docPdf.text(`Record #${i + 1} - ${r.date || '—'}`, pageW - margin, y + 2, { align: 'right' })
+          docPdf.setTextColor(0, 0, 0)
+          y += 10
+
+          if (r.primaryDx) addText(`Diagnosis: ${r.primaryDx}`, 10, true)
+          if (r.chiefComplaint) addText(`Complaint: ${r.chiefComplaint}`, 10)
+          if (r.treatmentPlan) addText(`Treatment: ${r.treatmentPlan}`, 10)
+          if (r.followUp) addText(`Follow-up: ${r.followUp}`, 10)
+
+          // Investigation images
+          if (r.invImages?.length) {
+            for (const img of r.invImages) {
+              addImageToPdf(img, `Investigation Image (${i + 1})`)
+            }
+          }
+          y += 3
+        })
+      }
+
+      docPdf.save(`patient_${p.name || p.id}.pdf`)
+    } catch (e) {
+      console.error('PDF export error:', e)
+      alert('حدث خطأ أثناء إنشاء ملف PDF')
     }
-    lines.push(`═══════════════════════════════════════`)
-    lines.push(`   تم التصدير: ${new Date().toLocaleString('ar-EG')}`)
-    lines.push(`═══════════════════════════════════════`)
-    const text = lines.join('\n')
-    const encoded = encodeURIComponent(text)
-    const dataUrl = 'data:text/plain;charset=utf-8,' + encoded
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = `patient_${p.name || p.id}.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
   }
 
   const loadData = async () => {
@@ -496,7 +568,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                              <button onClick={(e) => { e.stopPropagation(); downloadPatient(p) }} style={{ background: 'var(--success)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }} title="تحميل بيانات المريض">📥 تحميل</button>
+                              <button onClick={(e) => { e.stopPropagation(); downloadPatient(p) }} style={{ background: 'var(--success)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }} title="تحميل بيانات المريض كـ PDF">📄 PDF</button>
                               <button onClick={(e) => { e.stopPropagation(); window.open('/details/' + p.id, '_blank') }} style={{ background: 'var(--royal)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}>👁️ تفاصيل</button>
                               <button onClick={(e) => { e.stopPropagation(); deletePatient(p.id) }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
                             </div>
