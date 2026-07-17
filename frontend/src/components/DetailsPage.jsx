@@ -15,6 +15,7 @@ export default function DetailsPage() {
   const r = patient.records?.[patient.records.length - 1]
   const allInvImages = (patient.records || []).flatMap(rec => rec.invImages || [])
   const allImgImages = (patient.records || []).flatMap(rec => rec.imgImages || [])
+  const allImgImageKeys = (patient.records || []).flatMap(rec => rec.imgImageKeys || [])
   const getInitials = (name) => name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'
 
   return (
@@ -96,7 +97,7 @@ export default function DetailsPage() {
 
         {tab === 'imaging' && <div>
           {allImgImages.length > 0 ? Object.keys(imgLabels).map(key => {
-            const filtered = allImgImages.filter((_, i) => (patient.records || []).some(rec => (rec.imgImageKeys || [])[i] === key))
+            const filtered = allImgImages.filter((_, i) => allImgImageKeys[i] === key)
             if (!filtered.length) return null
             return <div key={key} style={{ marginBottom: 12 }}><div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>{imgLabels[key]}</div><ImageGrid images={filtered} onOpen={(i) => setLightbox({ images: filtered, index: i })} /></div>
           }).filter(Boolean) : <EmptyState icon="📷" text="لا توجد أشعة" />}

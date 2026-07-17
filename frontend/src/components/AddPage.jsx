@@ -56,7 +56,7 @@ export default function AddPage({ user }) {
 
   const toggleAccordion = useCallback((name) => setActiveAccordion(prev => prev === name ? '' : name), [])
 
-  const compressImage = (dataUrl, maxWidth = 800, quality = 0.5) => {
+  const compressImage = (dataUrl, maxWidth = 600, quality = 0.4) => {
     return new Promise((resolve) => {
       const img = new Image()
       img.onload = () => {
