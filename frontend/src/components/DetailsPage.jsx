@@ -3,6 +3,121 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { rosLabels, imgLabels, detailTabs } from '../constants'
 import { Lightbox, FieldBlock, RecordCard, ImageGrid, EmptyState } from './shared'
+import jsPDF from 'jspdf'
+
+function downloadPatientPdf(p) {
+  try {
+    const docPdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
+    const pageW = 210, margin = 15, contentW = pageW - margin * 2
+    let y = 20
+
+    const addText = (text, size = 11, isBold = false) => {
+      if (!text) return
+      docPdf.setFontSize(size)
+      docPdf.setFont('helvetica', isBold ? 'bold' : 'normal')
+      const lines = docPdf.splitTextToSize(String(text), contentW)
+      lines.forEach(line => {
+        if (y > 275) { docPdf.addPage(); y = 20 }
+        docPdf.text(line, pageW - margin, y, { align: 'right' })
+        y += size * 0.5
+      })
+    }
+
+    const addSection = (title, content) => {
+      if (!content) return
+      if (y > 260) { docPdf.addPage(); y = 20 }
+      docPdf.setFillColor(41, 65, 122)
+      docPdf.roundedRect(margin, y - 4, contentW, 8, 1, 1, 'F')
+      docPdf.setTextColor(255, 255, 255)
+      docPdf.setFontSize(11)
+      docPdf.setFont('helvetica', 'bold')
+      docPdf.text(title, pageW - margin, y + 1, { align: 'right' })
+      docPdf.setTextColor(0, 0, 0)
+      y += 10
+      addText(content)
+      y += 3
+    }
+
+    const addImageToPdf = (base64, title) => {
+      if (!base64) return
+      try {
+        if (y > 200) { docPdf.addPage(); y = 20 }
+        docPdf.setFillColor(240, 240, 240)
+        docPdf.roundedRect(margin, y - 2, contentW, 6, 1, 1, 'F')
+        docPdf.setFontSize(9)
+        docPdf.setFont('helvetica', 'bold')
+        docPdf.text(title, pageW - margin, y + 2, { align: 'right' })
+        y += 8
+        const imgW = contentW, imgH = imgW * 0.6
+        if (y + imgH > 275) { docPdf.addPage(); y = 20 }
+        docPdf.addImage(base64, 'JPEG', margin, y, imgW, imgH)
+        y += imgH + 5
+      } catch (e) { console.warn('Image skip:', e) }
+    }
+
+    docPdf.setFillColor(41, 65, 122)
+    docPdf.rect(0, 0, pageW, 35, 'F')
+    docPdf.setTextColor(255, 255, 255)
+    docPdf.setFontSize(20)
+    docPdf.setFont('helvetica', 'bold')
+    docPdf.text(`Patient: ${p.name || '—'}`, pageW - margin, 18, { align: 'right' })
+    docPdf.setFontSize(10)
+    docPdf.text(`Export: ${new Date().toLocaleDateString('en-US')}`, pageW - margin, 28, { align: 'right' })
+    docPdf.setTextColor(0, 0, 0)
+    y = 42
+
+    addSection('Personal Information', [
+      `Name: ${p.name}`, `Age: ${p.age} years`, `Gender: ${p.gender}`,
+      `Phone: ${p.phone}`, `Address: ${p.address || '—'}`, `Blood Type: ${p.bloodType || '—'}`,
+      `Occupation: ${p.occupation || '—'}`, `Emergency: ${p.emergency || '—'}`,
+    ].join('\n'))
+
+    if (p.hpi) addSection('Chief Complaint (HPI)', p.hpi)
+    if (p.chronicMeds) addSection('Chronic Medications', p.chronicMeds)
+    if (p.drugAllergies) addSection('Drug Allergies', p.drugAllergies)
+    if (p.socialHistory) addSection('Social History', p.socialHistory)
+    if (p.surgicalHistory) addSection('Surgical History', p.surgicalHistory)
+    if (p.pmh?.length) addSection('Past Medical History', p.pmh.map(m => `• ${m}`).join('\n'))
+    if (p.fh?.length) addSection('Family History', p.fh.map(f => `• ${f}`).join('\n'))
+
+    const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
+    if (rosItems.length) addSection('Review of Systems', rosItems.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n'))
+
+    if (p.records?.length) {
+      p.records.forEach((r, i) => {
+        if (y > 250) { docPdf.addPage(); y = 20 }
+        docPdf.setFillColor(100, 150, 200)
+        docPdf.roundedRect(margin, y - 2, contentW, 8, 1, 1, 'F')
+        docPdf.setTextColor(255, 255, 255)
+        docPdf.setFontSize(12)
+        docPdf.setFont('helvetica', 'bold')
+        docPdf.text(`Record #${i + 1} - ${r.date || '—'}`, pageW - margin, y + 2, { align: 'right' })
+        docPdf.setTextColor(0, 0, 0)
+        y += 10
+        if (r.primaryDx) addText(`Diagnosis: ${r.primaryDx}`, 10, true)
+        if (r.chiefComplaint) addText(`Complaint: ${r.chiefComplaint}`, 10)
+        if (r.treatmentPlan) addText(`Treatment: ${r.treatmentPlan}`, 10)
+        if (r.followUp) addText(`Follow-up: ${r.followUp}`, 10)
+        if (r.investigations) addText(`Investigations: ${r.investigations}`, 10)
+        if (r.invImages?.length) r.invImages.forEach((img, j) => addImageToPdf(img, `Investigation Image (${i + 1}.${j + 1})`))
+        if (r.imgImages?.length) r.imgImages.forEach((img, j) => addImageToPdf(img, `Imaging (${i + 1}.${j + 1})`))
+        y += 3
+      })
+    }
+
+    if (p.exams?.length) {
+      addSection('Lab Results', p.exams.map(e => `${e.name}: ${e.result || '—'} (normal: ${e.normalRange || '—'})`).join('\n'))
+    }
+    if (p.diseases?.length) {
+      addSection('Diseases', p.diseases.map(d => `• ${d.name} [${d.status}]`).join('\n'))
+    }
+
+    docPdf.save(`patient_${p.name || p.id}.pdf`)
+  } catch (e) {
+    console.error('PDF export error:', e)
+    alert('حدث خطأ أثناء إنشاء ملف PDF')
+  }
+}
 
 export default function DetailsPage() {
   const [patient, setPatient] = useState(null)
@@ -40,6 +155,7 @@ export default function DetailsPage() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => navigate(`/add/${patient.id}`)}>✏️ تعديل</button>
+            <button className="btn btn-sm" style={{ flex: 1, background: 'var(--success)', color: 'white' }} onClick={() => downloadPatientPdf(patient)}>📄 تحميل PDF</button>
           </div>
         </div>
         <div className="pill-tabs">
