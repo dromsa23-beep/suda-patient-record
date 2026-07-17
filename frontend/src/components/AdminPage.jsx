@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
 import {
-  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot, arrayUnion
+  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot
 } from 'firebase/firestore'
 import { sectionLabels } from '../constants'
 import jsPDF from 'jspdf'
@@ -80,7 +80,6 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const [editPassword, setEditPassword] = useState('')
   const [expandedUser, setExpandedUser] = useState(null)
   const [replyText, setReplyText] = useState({})
-  const [openComplaint, setOpenComplaint] = useState(null)
 
   const patientsByUser = useMemo(() => {
     const groups = {}
@@ -254,15 +253,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   }
 
   const resolveComplaint = async (id) => {
-    await updateDoc(doc(db, 'complaints', id), {
-      status: 'تم الحل',
-      resolvedDate: new Date().toISOString(),
-      messages: arrayUnion({
-        sender: 'system',
-        text: '✅ تم حل المشكلة بنجاح',
-        date: new Date().toISOString()
-      })
-    })
+    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل', resolvedDate: new Date().toISOString() })
     await loadData()
     showToast('تم إغلاق الشكوى')
   }
@@ -271,12 +262,8 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     const text = replyText[id]?.trim()
     if (!text) return
     await updateDoc(doc(db, 'complaints', id), {
-      messages: arrayUnion({
-        sender: 'admin',
-        senderName: admin?.name || 'المدير',
-        text: text,
-        date: new Date().toISOString()
-      }),
+      adminReply: text,
+      replyDate: new Date().toISOString(),
       status: 'بانتظار رد المستخدم'
     })
     setReplyText({ ...replyText, [id]: '' })
@@ -570,11 +557,10 @@ function AdminDashboard({ admin, onLogout, onBack }) {
               <div className="section-title"><span className="icon">📋</span> جميع الشكاوى ({complaints.length})</div>
               {complaints.map(c => {
                 const isOpen = openComplaint === c.id
-                const msgs = c.messages || []
+                const msgs = c.messages?.length ? c.messages : [{ sender: 'user', senderName: c.by || 'مستخدم', text: c.text, date: c.date }]
                 const st = c.status === 'جديد' ? { bg: '#fff8e1', color: '#f9a825', label: '⏳ جديد' } : c.status === 'تم الحل' ? { bg: '#e8f5e9', color: '#2e7d32', label: '✅ تم الحل' } : { bg: '#e3f2fd', color: '#1565c0', label: '💬...' }
                 return (
                   <div key={c.id} style={{ marginBottom: 12, background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: isOpen ? '2px solid var(--royal)' : '1px solid var(--border)' }}>
-                    {/* Header */}
                     <div
                       onClick={() => setOpenComplaint(isOpen ? null : c.id)}
                       style={{ padding: '12px 14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
@@ -586,14 +572,12 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                       <span style={{ fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, padding: '3px 10px', borderRadius: 10, whiteSpace: 'nowrap' }}>{st.label}</span>
                     </div>
 
-                    {/* Chat Thread */}
                     {isOpen && (
                       <div style={{ borderTop: '1px solid var(--border)', background: 'white' }}>
                         <div style={{ maxHeight: 400, overflowY: 'auto', padding: 12 }}>
-                          {msgs.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: 20, fontSize: 13 }}>لا توجد رسائل بعد</div>}
                           {msgs.map((m, i) => {
-                            const isSystem = m.sender === 'system'
                             const isAdmin = m.sender === 'admin'
+                            const isSystem = m.sender === 'system'
                             if (isSystem) {
                               return (
                                 <div key={i} style={{ textAlign: 'center', margin: '10px 0' }}>
@@ -624,7 +608,6 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                           })}
                         </div>
 
-                        {/* Reply + Actions */}
                         {c.status !== 'تم الحل' && (
                           <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
                             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
@@ -638,6 +621,13 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                               <button className="btn btn-primary btn-sm" onClick={() => replyToComplaint(c.id)}>📤 رد</button>
                             </div>
                             <button className="btn btn-full" style={{ background: 'var(--success)', color: 'white', fontSize: 13 }} onClick={() => resolveComplaint(c.id)}>✅ تم الحل — إغلاق الشكوى</button>
+                          </div>
+                        )}
+
+                        {c.status === 'تم الحل' && (
+                          <div style={{ padding: 12, borderTop: '1px solid var(--border)', textAlign: 'center', background: '#e8f5e9' }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ تم حل المشكلة بنجاح</span>
+                            {c.resolvedDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{new Date(c.resolvedDate).toLocaleDateString('ar-EG')}</div>}
                           </div>
                         )}
                       </div>

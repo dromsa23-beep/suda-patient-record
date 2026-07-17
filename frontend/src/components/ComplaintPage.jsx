@@ -26,6 +26,11 @@ export default function ComplaintPage({ user }) {
     }
   }, [openChat, myComplaints])
 
+  const getMessages = (c) => {
+    if (c.messages?.length) return c.messages
+    return [{ sender: 'user', senderName: c.by || 'مستخدم', text: c.text, date: c.date }]
+  }
+
   const send = async () => {
     if (!text.trim()) return
     setSending(true)
@@ -68,16 +73,16 @@ export default function ComplaintPage({ user }) {
     setReplyText({ ...replyText, [complaintId]: '' })
   }
 
-  const getStatusColor = (status) => {
+  const getStatusInfo = (status) => {
     if (status === 'جديد') return { bg: '#fff8e1', color: '#f9a825', label: '⏳ جديد' }
     if (status === 'تم الحل') return { bg: '#e8f5e9', color: '#2e7d32', label: '✅ تم الحل' }
     return { bg: '#e3f2fd', color: '#1565c0', label: '💬...' }
   }
 
   const ComplaintCard = ({ c }) => {
-    const st = getStatusColor(c.status)
+    const st = getStatusInfo(c.status)
     const isOpen = openChat === c.id
-    const messages = c.messages || []
+    const messages = getMessages(c)
 
     return (
       <div style={{ marginBottom: 12, background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: isOpen ? '2px solid var(--royal)' : '1px solid var(--border)' }}>
@@ -89,7 +94,7 @@ export default function ComplaintPage({ user }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{c.text}</div>
             <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-              {new Date(c.date).toLocaleDateString('ar-EG')} · {messages.length} رسالة
+              {new Date(c.date).toLocaleDateString('ar-EG')} {new Date(c.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })} · {messages.length} رسالة
             </div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, padding: '3px 10px', borderRadius: 10, whiteSpace: 'nowrap' }}>{st.label}</span>
@@ -98,13 +103,13 @@ export default function ComplaintPage({ user }) {
         {/* Chat Thread */}
         {isOpen && (
           <div style={{ borderTop: '1px solid var(--border)', background: 'white' }}>
-            <div style={{ maxHeight: 350, overflowY: 'auto', padding: 12 }}>
+            <div style={{ maxHeight: 400, overflowY: 'auto', padding: 12 }}>
               {messages.map((m, i) => {
                 const isUser = m.sender === 'user'
                 const isSystem = m.sender === 'system'
                 if (isSystem) {
                   return (
-                    <div key={i} style={{ textAlign: 'center', margin: '8px 0' }}>
+                    <div key={i} style={{ textAlign: 'center', margin: '10px 0' }}>
                       <span style={{ fontSize: 11, background: '#e8f5e9', color: 'var(--success)', padding: '4px 14px', borderRadius: 10 }}>{m.text}</span>
                     </div>
                   )
@@ -144,6 +149,13 @@ export default function ComplaintPage({ user }) {
                   style={{ flex: 1, padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit' }}
                 />
                 <button className="btn btn-primary btn-sm" onClick={() => replyToAdmin(c.id)}>📤</button>
+              </div>
+            )}
+
+            {c.status === 'تم الحل' && (
+              <div style={{ padding: 12, borderTop: '1px solid var(--border)', textAlign: 'center', background: '#e8f5e9' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ تم حل المشكلة بنجاح</span>
+                {c.resolvedDate && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{new Date(c.resolvedDate).toLocaleDateString('ar-EG')}</div>}
               </div>
             )}
           </div>
