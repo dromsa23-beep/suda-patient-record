@@ -3,15 +3,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+      allow read, write: if true;
     }
 
     match /admins/{adminId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
     match /patients/{patientId} {
@@ -27,6 +23,10 @@ service cloud.firestore {
     }
 
     match /surgeries/{surgeryId} {
+      allow read, write: if true;
+    }
+
+    match /complaints/{complaintId} {
       allow read, write: if true;
     }
   }
