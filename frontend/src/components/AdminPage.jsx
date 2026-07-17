@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
 import {
-  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot
+  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot
 } from 'firebase/firestore'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
@@ -92,10 +92,19 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   }
   useEffect(() => { loadData() }, [])
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     }, (err) => console.error('onSnapshot users error:', err))
-    return () => unsub()
+    const unsubPatients = onSnapshot(collection(db, 'patients'), (snap) => {
+      setPatientsList(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }, (err) => console.error('onSnapshot patients error:', err))
+    const unsubComplaints = onSnapshot(collection(db, 'complaints'), (snap) => {
+      setComplaints(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }, (err) => console.error('onSnapshot complaints error:', err))
+    const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
+      setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }, (err) => console.error('onSnapshot admins error:', err))
+    return () => { unsubUsers(); unsubPatients(); unsubComplaints(); unsubAdmins() }
   }, [])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
@@ -239,12 +248,12 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           </div>
 
           {tab === 'overview' && <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
               <div className="stat-card navy"><div className="stat-icon">👥</div><div className="number">{users.length}</div><div className="label">المستخدمين</div></div>
-              <div className="stat-card gold"><div className="stat-icon">🏥</div><div className="number">{patientsList.length}</div><div className="label">المرضى</div></div>
-              <div className="stat-card blue"><div className="stat-icon">⚙️</div><div className="number">{admins.length}</div><div className="label">المشرفين</div></div>
-              <div className="stat-card gold"><div className="stat-icon">📝</div><div className="number">{newComplaints}</div><div className="label">شكاوى جديدة</div></div>
-              <div className="stat-card navy" style={expiredCount > 0 ? { border: '2px solid var(--danger)' } : {}}><div className="stat-icon">❄️</div><div className="number" style={expiredCount > 0 ? { color: 'var(--danger)' } : {}}>{expiredCount}</div><div className="label">حسابات منتهية</div></div>
+              <div className="stat-card gold" style={pendingUsers > 0 ? { border: '2px solid var(--success)' } : {}}><div className="stat-icon">✅</div><div className="number" style={pendingUsers > 0 ? { color: 'var(--success)' } : {}}>{pendingUsers}</div><div className="label">بانتظار الموافقة</div></div>
+              <div className="stat-card blue"><div className="stat-icon">🏥</div><div className="number">{patientsList.length}</div><div className="label">المرضى</div></div>
+              <div className="stat-card gold"><div className="stat-icon">⚙️</div><div className="number">{admins.length}</div><div className="label">المشرفين</div></div>
+              <div className="stat-card navy" style={newComplaints > 0 ? { border: '2px solid var(--danger)' } : {}}><div className="stat-icon">📝</div><div className="number" style={newComplaints > 0 ? { color: 'var(--danger)' } : {}}>{newComplaints}</div><div className="label">شكاوى جديدة</div></div>
             </div>
             <div className="section">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -370,16 +379,29 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           {tab === 'patients' && <div>
             <div className="section">
               <div className="section-title"><span className="icon">🏥</span> جميع المرضى ({patientsList.length})</div>
-              {patientsList.map(p => (
-                <div key={p.id} className="patient-item">
-                  <div className="patient-avatar">{p.name?.[0] || '?'}</div>
-                  <div className="patient-info">
-                    <div className="patient-name">{p.name}</div>
-                    <div className="patient-meta">{p.age} سنة · {p.gender} · 📞 {p.phone} · 📍 {p.address}</div>
+              {patientsList.map(p => {
+                const records = p.records || []
+                const lastRecord = records[records.length - 1]
+                return (
+                  <div key={p.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="patient-avatar">{p.name?.[0] || '?'}</div>
+                        <div className="patient-info">
+                          <div className="patient-name">{p.name}</div>
+                          <div className="patient-meta">{p.age} سنة · {p.gender} · 📞 {p.phone} · 📍 {p.address || '—'}</div>
+                          {lastRecord && <div className="patient-meta">🩺 آخر زيارة: {lastRecord.date} · {lastRecord.primaryDx || '—'}</div>}
+                          <div className="patient-meta">📋 {records.length} سجل طبي · 👤 أضافه: {p.createdBy || '—'}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => window.open('/details/' + p.id, '_blank')} style={{ background: 'var(--royal)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}>👁️ تفاصيل</button>
+                        <button onClick={() => deletePatient(p.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={() => deletePatient(p.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
-                </div>
-              ))}
+                )
+              })}
               {!patientsList.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا يوجد مرضى مسجلين</div>}
             </div>
           </div>}
