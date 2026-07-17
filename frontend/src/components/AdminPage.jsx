@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
 import {
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, onSnapshot
 } from 'firebase/firestore'
+import { sectionLabels } from '../constants'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
 
@@ -75,6 +76,75 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const [loading, setLoading] = useState(true)
   const [editingAdmin, setEditingAdmin] = useState(null)
   const [editPassword, setEditPassword] = useState('')
+  const [expandedUser, setExpandedUser] = useState(null)
+
+  const patientsByUser = useMemo(() => {
+    const groups = {}
+    patientsList.forEach(p => {
+      const uid = p.userId || p.createdBy || 'unknown'
+      if (!groups[uid]) groups[uid] = []
+      groups[uid].push(p)
+    })
+    return groups
+  }, [patientsList])
+
+  const getUserLabel = (uid) => {
+    if (uid === 'unknown') return 'غير معروف'
+    const u = users.find(u => u.id === uid || u.username === uid)
+    return u ? (u.name || u.username) : uid
+  }
+
+  const downloadPatient = (p) => {
+    const lines = []
+    lines.push(`═══════════════════════════════════════`)
+    lines.push(`  سجل المريض: ${p.name}`)
+    lines.push(`═══════════════════════════════════════`)
+    lines.push(``)
+    lines.push(`📋 البيانات الشخصية`)
+    lines.push(`   الاسم: ${p.name}`)
+    lines.push(`   العمر: ${p.age} سنة`)
+    lines.push(`   الجنس: ${p.gender}`)
+    lines.push(`   الهاتف: ${p.phone}`)
+    lines.push(`   العنوان: ${p.address || '—'}`)
+    lines.push(`   فصيلة الدم: ${p.bloodType || '—'}`)
+    lines.push(`   المهنة: ${p.occupation || '—'}`)
+    lines.push(`   جهة الاتصال: ${p.emergency || '—'}`)
+    lines.push(``)
+    if (p.hpi) { lines.push(`🗣️ الشكوى الرئيسية`); lines.push(`   ${p.hpi}`); lines.push(``) }
+    if (p.chronicMeds) { lines.push(`💊 الأدوية المزمنة`); lines.push(`   ${p.chronicMeds}`); lines.push(``) }
+    if (p.drugAllergies) { lines.push(`⚠️ الحساسية الدوائية`); lines.push(`   ${p.drugAllergies}`); lines.push(``) }
+    if (p.socialHistory) { lines.push(`🏠 التاريخ الاجتماعي`); lines.push(`   ${p.socialHistory}`); lines.push(``) }
+    if (p.surgicalHistory) { lines.push(`🔪 التاريخ الجراحي`); lines.push(`   ${p.surgicalHistory}`); lines.push(``) }
+    if (p.pmh?.length) { lines.push(`📋 التاريخ المرضي السابق`); p.pmh.forEach(m => lines.push(`   • ${m}`)); lines.push(``) }
+    if (p.fh?.length) { lines.push(`👨‍👩‍👧‍👦 التاريخ العائلي`); p.fh.forEach(f => lines.push(`   • ${f}`)); lines.push(``) }
+    const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
+    if (rosItems.length) { lines.push(`🔬 مراجعة الأجهزة`); rosItems.forEach(([k, v]) => { lines.push(`   ${k}: ${Array.isArray(v) ? v.join(', ') : v}`) }); lines.push(``) }
+    if (p.records?.length) {
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+      lines.push(`📅 السجلات الطبية (${p.records.length})`)
+      lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+      p.records.forEach((r, i) => {
+        lines.push(``)
+        lines.push(`   ── السجل #${i + 1} ──`)
+        lines.push(`   التاريخ: ${r.date}`)
+        lines.push(`   التشخيص: ${r.primaryDx || '—'}`)
+        lines.push(`   الشكوى: ${r.chiefComplaint || '—'}`)
+        if (r.treatmentPlan) lines.push(`   خطة العلاج: ${r.treatmentPlan}`)
+        if (r.followUp) lines.push(`   المتابعة: ${r.followUp}`)
+        lines.push(``)
+      })
+    }
+    lines.push(`═══════════════════════════════════════`)
+    lines.push(`   تم التصدير: ${new Date().toLocaleString('ar-EG')}`)
+    lines.push(`═══════════════════════════════════════`)
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `patient_${p.name || p.id}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const loadData = async () => {
     try {
@@ -104,7 +174,14 @@ function AdminDashboard({ admin, onLogout, onBack }) {
       setComplaints(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     }, (err) => console.error('onSnapshot complaints error:', err))
     const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
-      setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      const allAdmins = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      setAdmins(allAdmins)
+      const superadmins = allAdmins.filter(a => a.role === 'superadmin')
+      if (superadmins.length > 1) {
+        for (let i = 1; i < superadmins.length; i++) {
+          deleteDoc(doc(db, 'admins', superadmins[i].id))
+        }
+      }
     }, (err) => console.error('onSnapshot admins error:', err))
     return () => { unsubUsers(); unsubPatients(); unsubComplaints(); unsubAdmins() }
   }, [])
@@ -384,30 +461,50 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
           {tab === 'patients' && <div>
             <div className="section">
-              <div className="section-title"><span className="icon">🏥</span> جميع المرضى ({patientsList.length})</div>
-              {patientsList.map(p => {
-                const records = p.records || []
-                const lastRecord = records[records.length - 1]
-                return (
-                  <div key={p.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div className="patient-avatar">{p.name?.[0] || '?'}</div>
-                        <div className="patient-info">
-                          <div className="patient-name">{p.name}</div>
-                          <div className="patient-meta">{p.age} سنة · {p.gender} · 📞 {p.phone} · 📍 {p.address || '—'}</div>
-                          {lastRecord && <div className="patient-meta">🩺 آخر زيارة: {lastRecord.date} · {lastRecord.primaryDx || '—'}</div>}
-                          <div className="patient-meta">📋 {records.length} سجل طبي · 👤 أضافه: {p.createdBy || '—'}</div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => window.open('/details/' + p.id, '_blank')} style={{ background: 'var(--royal)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}>👁️ تفاصيل</button>
-                        <button onClick={() => deletePatient(p.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
+              <div className="section-title"><span className="icon">🏥</span> جميع المرضى ({patientsList.length}) — حسب المستخدم</div>
+              {Object.entries(patientsByUser).map(([uid, plist]) => (
+                <div key={uid} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                  <div
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                    onClick={() => setExpandedUser(expandedUser === uid ? null : uid)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="patient-avatar" style={{ background: 'var(--royal)', color: 'white' }}>👤</div>
+                      <div className="patient-info">
+                        <div className="patient-name">{getUserLabel(uid)}</div>
+                        <div className="patient-meta">📋 {plist.length} مريض</div>
                       </div>
                     </div>
+                    <span style={{ fontSize: 18, color: 'var(--text-3)', transition: 'transform 0.2s', transform: expandedUser === uid ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
                   </div>
-                )
-              })}
+                  {expandedUser === uid && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 10, borderRight: '3px solid var(--royal)', marginRight: 6, paddingTop: 8 }}>
+                      {plist.map(p => {
+                        const records = p.records || []
+                        const lastRecord = records[records.length - 1]
+                        return (
+                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                              <div className="patient-avatar" style={{ width: 36, height: 36, fontSize: 14 }}>{p.name?.[0] || '?'}</div>
+                              <div className="patient-info" style={{ minWidth: 0 }}>
+                                <div className="patient-name" style={{ fontSize: 14 }}>{p.name}</div>
+                                <div className="patient-meta" style={{ fontSize: 11 }}>{p.age} سنة · {p.gender} · 📞 {p.phone}</div>
+                                {lastRecord && <div className="patient-meta" style={{ fontSize: 11 }}>🩺 آخر زيارة: {lastRecord.date} · {lastRecord.primaryDx || '—'}</div>}
+                                <div className="patient-meta" style={{ fontSize: 11 }}>📋 {records.length} سجل طبي</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              <button onClick={(e) => { e.stopPropagation(); downloadPatient(p) }} style={{ background: 'var(--success)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }} title="تحميل بيانات المريض">📥 تحميل</button>
+                              <button onClick={(e) => { e.stopPropagation(); window.open('/details/' + p.id, '_blank') }} style={{ background: 'var(--royal)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontSize: 12 }}>👁️ تفاصيل</button>
+                              <button onClick={(e) => { e.stopPropagation(); deletePatient(p.id) }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
               {!patientsList.length && <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-3)' }}>لا يوجد مرضى مسجلين</div>}
             </div>
           </div>}
