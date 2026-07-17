@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { auth } from './api'
-import { db, auth as firebaseAuth } from './firebase'
-import { onAuthStateChanged } from 'firebase/auth'
-import { collection, getDocs, query, where } from 'firebase/firestore'
 import LoginPage from './components/LoginPage'
 import HomePage from './components/HomePage'
 import SearchPage from './components/SearchPage'
@@ -17,42 +14,24 @@ import { navItems } from './constants'
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const [authReady, setAuthReady] = useState(false)
+  const [ready, setReady] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
   useEffect(() => {
-    const saved = localStorage.getItem('sudaUser')
-    let savedUser = null
-    try { savedUser = saved ? JSON.parse(saved) : null } catch { savedUser = null }
-
-    const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      if (fbUser && savedUser && savedUser.username) {
-        setUser(savedUser)
-        setAuthReady(true)
-        if (location.pathname === '/login') navigate('/')
-      } else if (!fbUser && savedUser && savedUser.username && savedUser.id) {
-        localStorage.removeItem('sudaUser')
-        setUser(null)
-        setAuthReady(true)
-      } else if (fbUser && !savedUser) {
-        try {
-          const snap = await getDocs(query(collection(db, 'users'), where('uid', '==', fbUser.uid)))
-          if (!snap.empty) {
-            const u = snap.docs[0].data()
-            const fullUser = { id: fbUser.uid, ...u, userDocId: snap.docs[0].id }
-            setUser(fullUser)
-            localStorage.setItem('sudaUser', JSON.stringify(fullUser))
-            if (location.pathname === '/login') navigate('/')
-          }
-        } catch {}
-        setAuthReady(true)
-      } else {
-        setUser(null)
-        setAuthReady(true)
+    try {
+      const saved = localStorage.getItem('sudaUser')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && parsed.username && parsed.approved !== false) {
+          setUser(parsed)
+          if (location.pathname === '/login') navigate('/')
+        } else {
+          localStorage.removeItem('sudaUser')
+        }
       }
-    })
-    return () => unsub()
+    } catch { localStorage.removeItem('sudaUser') }
+    setReady(true)
   }, [])
 
   const handleLogin = async (u, p) => {
@@ -61,15 +40,19 @@ export default function App() {
     localStorage.setItem('sudaUser', JSON.stringify(data.user))
     navigate('/')
   }
-  const handleRegister = async (d) => { await auth.register(d); return true }
+
+  const handleRegister = async (d) => {
+    await auth.register(d)
+  }
+
   const handleLogout = async () => {
-    try { await auth.logout() } catch (e) { console.error(e) }
+    try { await auth.logout() } catch {}
     localStorage.removeItem('sudaUser')
     setUser(null)
     navigate('/login')
   }
 
-  if (!authReady) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+  if (!ready) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
     <div style={{ textAlign: 'center' }}>
       <div className="login-logo">🏥</div>
       <p style={{ color: 'var(--text-2)', marginTop: 12 }}>جاري التحميل...</p>

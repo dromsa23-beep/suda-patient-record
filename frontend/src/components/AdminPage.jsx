@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { patients as patientsApi } from '../api'
 import { db } from '../firebase'
 import {
-  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc
+  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot
 } from 'firebase/firestore'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
@@ -88,11 +87,16 @@ function AdminDashboard({ admin, onLogout, onBack }) {
       setPatientsList(patientsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setAdmins(adminsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
       setComplaints(complaintsSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-    } catch (e) { console.error(e) }
+    } catch (e) { console.error('loadData error:', e) }
     finally { setLoading(false) }
   }
   useEffect(() => { loadData() }, [])
-  useEffect(() => { loadData() }, [tab])
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    }, (err) => console.error('onSnapshot users error:', err))
+    return () => unsub()
+  }, [])
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500) }
 

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
-import { db, auth as firebaseAuth } from '../firebase'
-import { collection, getDocs, addDoc } from 'firebase/firestore'
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { db } from '../firebase'
+import { collection, getDocs } from 'firebase/firestore'
 import { auth } from '../api'
 
 export default function LoginPage({ onLogin, onRegister }) {
@@ -11,6 +10,7 @@ export default function LoginPage({ onLogin, onRegister }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', clinic: '', username: '', password: '', confirm: '', specialty: '' })
   const [creds, setCreds] = useState({ username: '', password: '' })
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const [registered, setRegistered] = useState(false)
   const navigate = useNavigate()
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
@@ -18,8 +18,9 @@ export default function LoginPage({ onLogin, onRegister }) {
   useEffect(() => { auth.initAdmin() }, [])
 
   const doLogin = async () => {
+    setError('')
+    if (!creds.username || !creds.password) { setError('أدخل اسم المستخدم وكلمة المرور'); return }
     try {
-      setError('')
       const snap = await getDocs(collection(db, 'admins'))
       const found = snap.docs.find(d => {
         const a = d.data()
@@ -27,35 +28,30 @@ export default function LoginPage({ onLogin, onRegister }) {
       })
       if (found) {
         const a = found.data()
-        const adminEmail = 'admin_' + a.username + '@suda.app'
-        try {
-          await signInWithEmailAndPassword(firebaseAuth, adminEmail, creds.password)
-        } catch {
-          try {
-            await createUserWithEmailAndPassword(firebaseAuth, adminEmail, creds.password)
-            await addDoc(collection(db, 'users'), {
-              name: a.name, username: a.username, role: 'admin', approved: true,
-              uid: (await import('firebase/auth')).getAuth().currentUser.uid,
-              createdAt: new Date().toISOString(), migrated: true
-            })
-          } catch {
-            try { await signInWithEmailAndPassword(firebaseAuth, adminEmail, creds.password) } catch {}
-          }
-        }
         localStorage.setItem('sudaAdmin', JSON.stringify({ id: found.id, username: a.username, name: a.name, role: a.role }))
         navigate('/admin')
         return
       }
       await onLogin(creds.username, creds.password)
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message || 'خطأ في البيانات')
     }
-    catch (e) { setError(e.response?.data?.detail || 'خطأ في البيانات') }
   }
+
   const doRegister = async () => {
+    setError('')
+    if (!form.name || !form.username || !form.password) { setError('أكمل جميع الحقول المطلوبة'); return }
+    if (form.password !== form.confirm) { setError('كلمة السر غير متطابقة'); return }
+    if (form.password.length < 6) { setError('كلمة السر 6 أحرف على الأقل'); return }
+    setLoading(true)
     try {
-      if (form.password !== form.confirm) { setError('كلمة السر غير متطابقة'); return }
-      if (form.password.length < 6) { setError('كلمة السر 6 أحرف على الأقل'); return }
-      await onRegister(form); setRegistered(true); setError('')
-    } catch (e) { setError(e.response?.data?.detail || 'خطأ في التسجيل') }
+      await onRegister(form)
+      setRegistered(true)
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message || 'خطأ في التسجيل')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -79,31 +75,31 @@ export default function LoginPage({ onLogin, onRegister }) {
             <div style={{ fontWeight: 600, fontSize: 12 }}>📞 للاستفسار الاتصال على:</div>
             <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--royal)', direction: 'ltr', marginTop: 4 }}>00249127320208</div>
           </div>
-          <button className="btn btn-primary btn-full" onClick={() => { setRegistered(false); setTab('login') }} style={{ marginTop: 12 }}>العودة لتسجيل الدخول</button>
+          <button className="btn btn-primary btn-full" onClick={() => { setRegistered(false); setTab('login'); setForm({ name: '', email: '', phone: '', clinic: '', username: '', password: '', confirm: '', specialty: '' }) }} style={{ marginTop: 12 }}>العودة لتسجيل الدخول</button>
         </div>}
         {!registered && tab === 'login' ? (
           <div>
             <div className="form-group"><label>👤 اسم المستخدم</label><input placeholder="اسم المستخدم" value={creds.username} onChange={e => set('username', e.target.value)} /></div>
             <div className="form-group"><label>🔒 كلمة السر</label><input type="password" placeholder="كلمة السر" value={creds.password} onChange={e => set('password', e.target.value)} onKeyDown={e => e.key === 'Enter' && doLogin()} /></div>
-            <button className="btn btn-primary btn-full" onClick={doLogin} style={{ marginTop: 8 }}>🔐 دخول</button>
+            <button className="btn btn-primary btn-full" onClick={doLogin} disabled={loading} style={{ marginTop: 8 }}>{loading ? 'جاري الدخول...' : '🔐 دخول'}</button>
           </div>
-        ) : (
+        ) : !registered ? (
           <div>
-            <div className="form-group"><label>👤 الاسم الكامل</label><input placeholder="الاسم الكامل" value={form.name} onChange={e => set('name', e.target.value)} /></div>
+            <div className="form-group"><label>👤 الاسم الكامل *</label><input placeholder="الاسم الكامل" value={form.name} onChange={e => set('name', e.target.value)} /></div>
             <div className="form-row">
               <div className="form-group"><label>📧 البريد</label><input placeholder="البريد" value={form.email} onChange={e => set('email', e.target.value)} /></div>
               <div className="form-group"><label>📞 الهاتف</label><input placeholder="الهاتف" value={form.phone} onChange={e => set('phone', e.target.value)} /></div>
             </div>
             <div className="form-group"><label>🩺 التخصص</label><select value={form.specialty} onChange={e => set('specialty', e.target.value)}><option value="">اختر التخصص</option>{specialtyList.map(s => <option key={s}>{s}</option>)}</select></div>
             <div className="form-group"><label>🏥 مكان العيادة</label><input placeholder="مكان العيادة" value={form.clinic} onChange={e => set('clinic', e.target.value)} /></div>
-            <div className="form-group"><label>👤 اسم المستخدم</label><input placeholder="اسم المستخدم" value={form.username} onChange={e => set('username', e.target.value)} /></div>
+            <div className="form-group"><label>👤 اسم المستخدم *</label><input placeholder="اسم المستخدم" value={form.username} onChange={e => set('username', e.target.value)} /></div>
             <div className="form-row">
-              <div className="form-group"><label>🔒 كلمة السر</label><input type="password" placeholder="كلمة السر" value={form.password} onChange={e => set('password', e.target.value)} /></div>
-              <div className="form-group"><label>🔒 تأكيد كلمة السر</label><input type="password" placeholder="تأكيد كلمة السر" value={form.confirm} onChange={e => set('confirm', e.target.value)} /></div>
+              <div className="form-group"><label>🔒 كلمة السر *</label><input type="password" placeholder="كلمة السر" value={form.password} onChange={e => set('password', e.target.value)} /></div>
+              <div className="form-group"><label>🔒 تأكيد كلمة السر *</label><input type="password" placeholder="تأكيد كلمة السر" value={form.confirm} onChange={e => set('confirm', e.target.value)} /></div>
             </div>
-            <button className="btn btn-accent btn-full" onClick={doRegister} style={{ marginTop: 8 }}>✅ إنشاء حساب</button>
+            <button className="btn btn-accent btn-full" onClick={doRegister} disabled={loading} style={{ marginTop: 8 }}>{loading ? 'جاري التسجيل...' : '✅ إنشاء حساب'}</button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )

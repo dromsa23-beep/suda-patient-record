@@ -1,6 +1,6 @@
 import { db, auth as firebaseAuth } from './firebase';
 import {
-  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit as firestoreLimit, setDoc
+  collection, getDocs, doc, getDoc, addDoc, updateDoc, deleteDoc, query, where, setDoc
 } from 'firebase/firestore';
 import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
@@ -8,86 +8,26 @@ import {
 
 const MAX_SESSIONS = 3;
 
-function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
-
 const authAPI = {
   login: async (data) => {
-    const email = data.username + '@suda.app';
-    let cred = null;
-
-    try {
-      cred = await signInWithEmailAndPassword(firebaseAuth, email, data.password);
-    } catch (firebaseError) {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const legacyUser = usersSnap.docs.find(d => {
-        const u = d.data();
-        return u.username === data.username && u.password === data.password;
-      });
-      if (legacyUser) {
-        try {
-          cred = await createUserWithEmailAndPassword(firebaseAuth, email, data.password);
-          const lu = legacyUser.data();
-          const uid = cred.user.uid;
-          await addDoc(collection(db, 'users'), {
-            name: lu.name, username: lu.username, email: lu.email, phone: lu.phone,
-            clinic: lu.clinic, specialty: lu.specialty, role: lu.role || 'user',
-            approved: lu.approved, subscriptionStart: lu.subscriptionStart,
-            subscriptionEnd: lu.subscriptionEnd, createdAt: lu.createdAt, uid,
-            migrated: true
-          });
-        } catch (migErr) {
-          if (migErr.code === 'auth/email-already-in-use') {
-            try {
-              cred = await signInWithEmailAndPassword(firebaseAuth, email, data.password);
-            } catch { throw { response: { data: { detail: 'حدث خطأ. يرجى المحاولة مرة أخرى أو تغيير كلمة المرور' } } }; }
-          } else {
-            throw { response: { data: { detail: 'خطأ في الترحيل: ' + migErr.message } } };
-          }
-        }
-      } else {
-        throw { response: { data: { detail: 'اسم المستخدم أو كلمة المرور خاطئة' } } };
-      }
-    }
-
-    const uid = cred.user.uid;
-    const usersSnap2 = await getDocs(collection(db, 'users'));
-    const userDoc = usersSnap2.docs.find(d => d.data().uid === uid);
-    if (!userDoc) {
-      await signOut(firebaseAuth);
-      throw { response: { data: { detail: 'الحساب غير موجود في النظام' } } };
-    }
+    const snap = await getDocs(collection(db, 'users'));
+    const userDoc = snap.docs.find(d => {
+      const u = d.data();
+      return u.username === data.username && u.password === data.password;
+    });
+    if (!userDoc) throw { response: { data: { detail: 'اسم المستخدم أو كلمة المرور خاطئة' } } };
     const u = userDoc.data();
     if (u.approved === false) {
-      await signOut(firebaseAuth);
       throw { response: { data: { detail: 'حسابك في انتظار موافقة الإدارة. للاستفسار الاتصال على 00249127320208' } } };
     }
     if (u.subscriptionEnd) {
-      const now = new Date();
-      const end = new Date(u.subscriptionEnd);
-      if (now > end) {
-        await signOut(firebaseAuth);
-        throw { response: { data: { detail: 'انتهى اشتراكك. يرجى تجديد الاشتراك للاستمرار في استخدام التطبيق' } } };
+      if (new Date(u.subscriptionEnd) < new Date()) {
+        throw { response: { data: { detail: 'انتهى اشتراكك. يرجى تجديد الاشتراك' } } };
       }
     }
-    const sessionsSnap = await getDocs(query(collection(db, 'sessions'), where('uid', '==', uid)));
-    const activeSessions = sessionsSnap.docs.filter(d => {
-      const s = d.data();
-      return s.expiresAt > Date.now();
-    });
-    if (activeSessions.length >= MAX_SESSIONS) {
-      await signOut(firebaseAuth);
-      throw { response: { data: { detail: 'الحد الأقصى لتسجيل الدخول هو ' + MAX_SESSIONS + ' أجهزة. يرجى تسجيل الخروج من جهاز آخر.' } } };
-    }
-    const deviceId = localStorage.getItem('suda_device_id') || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
-    localStorage.setItem('suda_device_id', deviceId);
-    const existingDevice = sessionsSnap.docs.find(d => d.data().deviceId === deviceId);
-    if (existingDevice) {
-      await updateDoc(doc(db, 'sessions', existingDevice.id), { expiresAt: Date.now() + 24 * 60 * 60 * 1000, lastActive: Date.now() });
-    } else {
-      await addDoc(collection(db, 'sessions'), { uid, deviceId, createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000, lastActive: Date.now() });
-    }
-    return { data: { user: { id: uid, ...u, userDocId: userDoc.id } } };
+    return { data: { user: { id: userDoc.id, ...u } } };
   },
+
   register: async (data) => {
     const snap = await getDocs(collection(db, 'users'));
     const exists = snap.docs.find(d => d.data().username === data.username);
@@ -109,30 +49,22 @@ const authAPI = {
       subscriptionEnd: subEnd.toISOString(),
       createdAt: now.toISOString()
     };
-    const docRef = await addDoc(collection(db, 'users'), userData);
-    return { data: { message: 'تم التسجيل', id: docRef.id } };
+    await addDoc(collection(db, 'users'), userData);
+    return { data: { message: 'تم التسجيل' } };
   },
+
   logout: async () => {
-    const user = firebaseAuth.currentUser;
-    if (user) {
-      const deviceId = localStorage.getItem('suda_device_id');
-      if (deviceId) {
-        const snap = await getDocs(query(collection(db, 'sessions'), where('uid', '==', user.uid)));
-        for (const d of snap.docs) {
-          if (d.data().deviceId === deviceId) {
-            await deleteDoc(doc(db, 'sessions', d.id));
-          }
-        }
-      }
-      await signOut(firebaseAuth);
-    }
+    localStorage.removeItem('sudaUser');
+    try { await signOut(firebaseAuth); } catch {}
   },
+
   initAdmin: async () => {
-    const snap = await getDocs(collection(db, 'admins'));
-    if (snap.empty) {
-      const defaultAdmin = { username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() };
-      await addDoc(collection(db, 'admins'), defaultAdmin);
-    }
+    try {
+      const snap = await getDocs(collection(db, 'admins'));
+      if (snap.empty) {
+        await addDoc(collection(db, 'admins'), { username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() });
+      }
+    } catch {}
   }
 };
 
