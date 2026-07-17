@@ -61,8 +61,14 @@ const authAPI = {
   initAdmin: async () => {
     try {
       const snap = await getDocs(collection(db, 'admins'));
-      if (snap.empty) {
+      const superadmins = snap.docs.filter(d => d.data().role === 'superadmin');
+      if (superadmins.length === 0) {
         await addDoc(collection(db, 'admins'), { username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() });
+      }
+      if (superadmins.length > 1) {
+        for (let i = 1; i < superadmins.length; i++) {
+          await deleteDoc(doc(db, 'admins', superadmins[i].id));
+        }
       }
     } catch {}
   }

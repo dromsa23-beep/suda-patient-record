@@ -73,6 +73,8 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const [showAddAdmin, setShowAddAdmin] = useState(false)
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
+  const [editingAdmin, setEditingAdmin] = useState(null)
+  const [editPassword, setEditPassword] = useState('')
 
   const loadData = async () => {
     try {
@@ -121,13 +123,17 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   }
 
   const removeAdmin = async (id) => {
-    if (admin.role !== 'superadmin') return showToast('فقط المدير العام يمكنه حذف المشرفين')
-    const found = admins.find(a => a.id === id)
-    if (found && found.role === 'superadmin') return showToast('لا يمكن حذف المدير العام')
     if (!confirm('هل أنت متأكد من حذف هذا المشرف؟')) return
     await deleteDoc(doc(db, 'admins', id))
-    await loadData()
     showToast('تم حذف المشرف')
+  }
+
+  const changeAdminPassword = async (id) => {
+    if (!editPassword || editPassword.length < 6) return showToast('كلمة المرور 6 أحرف على الأقل')
+    await updateDoc(doc(db, 'admins', id), { password: editPassword })
+    setEditingAdmin(null)
+    setEditPassword('')
+    showToast('تم تغيير كلمة المرور')
   }
 
   const removeUser = async (id) => {
@@ -453,15 +459,29 @@ function AdminDashboard({ admin, onLogout, onBack }) {
                 </div>
               )}
               {admins.map(a => (
-                <div key={a.id} className="patient-item">
-                  <div className="patient-avatar" style={{ background: a.role === 'superadmin' ? 'linear-gradient(135deg, var(--gold), var(--gold-light))' : 'linear-gradient(135deg, var(--royal), var(--med-blue))' }}>
-                    {a.role === 'superadmin' ? '👑' : '⚙️'}
+                <div key={a.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="patient-avatar" style={{ background: a.role === 'superadmin' ? 'linear-gradient(135deg, var(--gold), var(--gold-light))' : 'linear-gradient(135deg, var(--royal), var(--med-blue))' }}>
+                        {a.role === 'superadmin' ? '👑' : '⚙️'}
+                      </div>
+                      <div className="patient-info">
+                        <div className="patient-name">{a.name} {a.role === 'superadmin' && <span style={{ fontSize: 10, background: 'var(--gold)', color: 'var(--navy)', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>مدير عام</span>}</div>
+                        <div className="patient-meta">👤 {a.username} · 🔑 {a.password} · 🏥 {a.clinic || 'غير محدد'}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => { setEditingAdmin(a.id); setEditPassword('') }} style={{ background: 'none', border: 'none', color: 'var(--royal)', cursor: 'pointer', fontSize: 14 }} title="تغيير كلمة المرور">🔑</button>
+                      <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>
+                    </div>
                   </div>
-                  <div className="patient-info">
-                    <div className="patient-name">{a.name} {a.role === 'superadmin' && <span style={{ fontSize: 10, background: 'var(--gold)', color: 'var(--navy)', padding: '1px 6px', borderRadius: 8, marginRight: 4 }}>مدير عام</span>}</div>
-                    <div className="patient-meta">👤 {a.username} · 🔑 {a.password} · 🏥 {a.clinic || 'غير محدد'} · 📅 {new Date(a.createdAt).toLocaleDateString('ar')}</div>
-                  </div>
-                  {a.role !== 'superadmin' && <button onClick={() => removeAdmin(a.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }} title="حذف">🗑️</button>}
+                  {editingAdmin === a.id && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', background: 'var(--bg)', borderRadius: 8 }}>
+                      <input type="password" placeholder="كلمة المرور الجديدة" value={editPassword} onChange={e => setEditPassword(e.target.value)} style={{ flex: 1, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }} onKeyDown={e => e.key === 'Enter' && changeAdminPassword(a.id)} />
+                      <button className="btn btn-accent btn-sm" onClick={() => changeAdminPassword(a.id)}>✅ حفظ</button>
+                      <button className="btn btn-sm" style={{ background: 'var(--border)', color: 'var(--text)' }} onClick={() => setEditingAdmin(null)}>❌</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
