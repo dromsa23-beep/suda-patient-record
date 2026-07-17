@@ -5,6 +5,7 @@ import {
 import {
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut
 } from 'firebase/auth';
+import { setDoc } from 'firebase/firestore';
 
 const MAX_SESSIONS = 3;
 
@@ -104,22 +105,20 @@ const authAPI = {
     const subEnd = new Date(now);
     subEnd.setMonth(subEnd.getMonth() + 1);
     const userData = {
-      ...data,
+      name: data.name || '',
+      email: data.email || '',
+      phone: data.phone || '',
+      clinic: data.clinic || '',
+      username: data.username,
+      specialty: data.specialty || '',
       uid,
-      password: undefined,
       approved: false,
       role: 'user',
       subscriptionStart: now.toISOString(),
       subscriptionEnd: subEnd.toISOString(),
       createdAt: now.toISOString()
     };
-    delete userData.password;
-    delete userData.confirm;
-    try {
-      await updateDoc(doc(db, 'users', uid), userData);
-    } catch {
-      await addDoc(collection(db, 'users'), { id: uid, ...userData });
-    }
+    await setDoc(doc(db, 'users', uid), userData);
     await signOut(firebaseAuth);
     return { data: { message: 'تم التسجيل' } };
   },

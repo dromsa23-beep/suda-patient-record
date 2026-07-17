@@ -187,7 +187,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const isExpired = (u) => u.subscriptionEnd && new Date(u.subscriptionEnd) < new Date()
 
-  const pendingUsers = users.filter(u => u.approved === false).length
+  const pendingUsers = users.filter(u => u.approved === false || u.approved === undefined).length
 
   const tabs = [
     { k: 'overview', l: '📊 النظرة العامة' },
@@ -303,7 +303,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
           {tab === 'approvals' && <div>
             <div className="section">
               <div className="section-title"><span className="icon">✅</span> طلبات الموافقة ({pendingUsers}) <button onClick={loadData} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }} title="تحديث">🔄</button></div>
-              {users.filter(u => u.approved === false).map(u => (
+              {users.filter(u => u.approved === false || u.approved === undefined).map(u => (
                 <div key={u.id} className="patient-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
