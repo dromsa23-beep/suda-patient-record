@@ -37,7 +37,10 @@ export default function App() {
     setUser(data.user); localStorage.setItem('sudaUser', JSON.stringify(data.user)); navigate('/')
   }
   const handleRegister = async (d) => { await auth.register(d); return true }
-  const handleLogout = () => { localStorage.removeItem('sudaUser'); setUser(null); navigate('/login') }
+  const handleLogout = async () => {
+    try { await auth.logout() } catch (e) { console.error(e) }
+    localStorage.removeItem('sudaUser'); setUser(null); navigate('/login')
+  }
 
   if (!user) return <Routes>
     <Route path="/admin" element={<AdminPage />} />

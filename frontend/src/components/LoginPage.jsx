@@ -2,16 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
 import { db } from '../firebase'
-import { collection, getDocs, addDoc } from 'firebase/firestore'
-
-const defaultAdmin = { username: 'admin', password: 'admin123', name: 'المدير العام', role: 'superadmin', createdAt: new Date().toISOString() }
-
-async function initAdmins() {
-  const snap = await getDocs(collection(db, 'admins'))
-  if (snap.empty) {
-    await addDoc(collection(db, 'admins'), defaultAdmin)
-  }
-}
+import { collection, getDocs } from 'firebase/firestore'
+import { auth } from '../api'
 
 export default function LoginPage({ onLogin, onRegister }) {
   const [tab, setTab] = useState('login')
@@ -22,7 +14,7 @@ export default function LoginPage({ onLogin, onRegister }) {
   const navigate = useNavigate()
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
 
-  useEffect(() => { initAdmins() }, [])
+  useEffect(() => { auth.initAdmin() }, [])
 
   const doLogin = async () => {
     try {
