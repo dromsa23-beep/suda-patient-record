@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { auth } from './api'
+import { db, auth as firebaseAuth } from './firebase'
+import { onAuthStateChanged } from 'firebase/auth'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import LoginPage from './components/LoginPage'
 import HomePage from './components/HomePage'
 import SearchPage from './components/SearchPage'
@@ -14,33 +17,64 @@ import { navItems } from './constants'
 
 export default function App() {
   const [user, setUser] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
   useEffect(() => {
-    const saved = localStorage.getItem('sudaUser')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (parsed && parsed.username) {
-          setUser(parsed)
-          if (location.pathname === '/login') navigate('/')
-        } else {
-          localStorage.removeItem('sudaUser')
+    const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
+      if (fbUser) {
+        const saved = localStorage.getItem('sudaUser')
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved)
+            if (parsed && parsed.username) {
+              setUser(parsed)
+              setAuthReady(true)
+              if (location.pathname === '/login') navigate('/')
+              return
+            }
+          } catch {}
         }
-      } catch { localStorage.removeItem('sudaUser') }
-    }
+        try {
+          const snap = await getDocs(query(collection(db, 'users'), where('uid', '==', fbUser.uid)))
+          if (!snap.empty) {
+            const u = snap.docs[0].data()
+            const fullUser = { id: fbUser.uid, ...u, userDocId: snap.docs[0].id }
+            setUser(fullUser)
+            localStorage.setItem('sudaUser', JSON.stringify(fullUser))
+            if (location.pathname === '/login') navigate('/')
+          }
+        } catch {}
+      } else {
+        localStorage.removeItem('sudaUser')
+        setUser(null)
+      }
+      setAuthReady(true)
+    })
+    return () => unsub()
   }, [])
 
   const handleLogin = async (u, p) => {
     const { data } = await auth.login({ username: u, password: p })
-    setUser(data.user); localStorage.setItem('sudaUser', JSON.stringify(data.user)); navigate('/')
+    setUser(data.user)
+    localStorage.setItem('sudaUser', JSON.stringify(data.user))
+    navigate('/')
   }
   const handleRegister = async (d) => { await auth.register(d); return true }
   const handleLogout = async () => {
     try { await auth.logout() } catch (e) { console.error(e) }
-    localStorage.removeItem('sudaUser'); setUser(null); navigate('/login')
+    localStorage.removeItem('sudaUser')
+    setUser(null)
+    navigate('/login')
   }
+
+  if (!authReady) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+    <div style={{ textAlign: 'center' }}>
+      <div className="login-logo">🏥</div>
+      <p style={{ color: 'var(--text-2)', marginTop: 12 }}>جاري التحميل...</p>
+    </div>
+  </div>
 
   if (!user) return <Routes>
     <Route path="/admin" element={<AdminPage />} />

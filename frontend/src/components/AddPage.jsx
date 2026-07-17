@@ -122,7 +122,7 @@ export default function AddPage({ user }) {
 
   const save = async () => {
     try {
-      const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown' }
+      const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown', userId: user?.id || user?.username || 'unknown' }
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
       const jsonSize = new TextEncoder().encode(JSON.stringify(data)).length
       if (jsonSize > 900000) {
