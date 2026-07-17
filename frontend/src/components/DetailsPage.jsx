@@ -4,115 +4,56 @@ import { patients as patientsApi } from '../api'
 import { rosLabels, imgLabels, detailTabs } from '../constants'
 import { Lightbox, FieldBlock, RecordCard, ImageGrid, EmptyState } from './shared'
 import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
-function downloadPatientPdf(p) {
+async function downloadPatientPdf(p, patientId) {
   try {
-    const docPdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
-    const pageW = 210, margin = 15, contentW = pageW - margin * 2
-    let y = 20
+    const pdfRef = document.getElementById('pdf-export-area')
+    if (!pdfRef) return
 
-    const addText = (text, size = 11, isBold = false) => {
-      if (!text) return
-      docPdf.setFontSize(size)
-      docPdf.setFont('helvetica', isBold ? 'bold' : 'normal')
-      const lines = docPdf.splitTextToSize(String(text), contentW)
-      lines.forEach(line => {
-        if (y > 275) { docPdf.addPage(); y = 20 }
-        docPdf.text(line, pageW - margin, y, { align: 'right' })
-        y += size * 0.5
-      })
+    const canvas = await html2canvas(pdfRef, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: pdfRef.scrollWidth,
+      height: pdfRef.scrollHeight,
+    })
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.85)
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const margin = 5
+    const contentW = pageW - margin * 2
+    const imgH = (canvas.height * contentW) / canvas.width
+
+    let y = margin
+    let remaining = imgH
+    let srcY = 0
+    const sliceH = pageH - margin * 2
+
+    while (remaining > 0) {
+      if (y !== margin) pdf.addPage()
+
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = canvas.width
+      tempCanvas.height = Math.min(sliceH * (canvas.width / contentW), canvas.height - srcY)
+      const ctx = tempCanvas.getContext('2d')
+      ctx.drawImage(canvas, 0, srcY, canvas.width, tempCanvas.height, 0, 0, canvas.width, tempCanvas.height)
+
+      const sliceData = tempCanvas.toDataURL('image/jpeg', 0.85)
+      const sliceImgH = (tempCanvas.height * contentW) / canvas.width
+
+      pdf.addImage(sliceData, 'JPEG', margin, margin, contentW, sliceImgH)
+
+      srcY += tempCanvas.height
+      remaining -= sliceH
+      y = margin
     }
 
-    const addSection = (title, content) => {
-      if (!content) return
-      if (y > 260) { docPdf.addPage(); y = 20 }
-      docPdf.setFillColor(41, 65, 122)
-      docPdf.roundedRect(margin, y - 4, contentW, 8, 1, 1, 'F')
-      docPdf.setTextColor(255, 255, 255)
-      docPdf.setFontSize(11)
-      docPdf.setFont('helvetica', 'bold')
-      docPdf.text(title, pageW - margin, y + 1, { align: 'right' })
-      docPdf.setTextColor(0, 0, 0)
-      y += 10
-      addText(content)
-      y += 3
-    }
-
-    const addImageToPdf = (base64, title) => {
-      if (!base64) return
-      try {
-        if (y > 200) { docPdf.addPage(); y = 20 }
-        docPdf.setFillColor(240, 240, 240)
-        docPdf.roundedRect(margin, y - 2, contentW, 6, 1, 1, 'F')
-        docPdf.setFontSize(9)
-        docPdf.setFont('helvetica', 'bold')
-        docPdf.text(title, pageW - margin, y + 2, { align: 'right' })
-        y += 8
-        const imgW = contentW, imgH = imgW * 0.6
-        if (y + imgH > 275) { docPdf.addPage(); y = 20 }
-        docPdf.addImage(base64, 'JPEG', margin, y, imgW, imgH)
-        y += imgH + 5
-      } catch (e) { console.warn('Image skip:', e) }
-    }
-
-    docPdf.setFillColor(41, 65, 122)
-    docPdf.rect(0, 0, pageW, 35, 'F')
-    docPdf.setTextColor(255, 255, 255)
-    docPdf.setFontSize(20)
-    docPdf.setFont('helvetica', 'bold')
-    docPdf.text(`Patient: ${p.name || '—'}`, pageW - margin, 18, { align: 'right' })
-    docPdf.setFontSize(10)
-    docPdf.text(`Export: ${new Date().toLocaleDateString('en-US')}`, pageW - margin, 28, { align: 'right' })
-    docPdf.setTextColor(0, 0, 0)
-    y = 42
-
-    addSection('Personal Information', [
-      `Name: ${p.name}`, `Age: ${p.age} years`, `Gender: ${p.gender}`,
-      `Phone: ${p.phone}`, `Address: ${p.address || '—'}`, `Blood Type: ${p.bloodType || '—'}`,
-      `Occupation: ${p.occupation || '—'}`, `Emergency: ${p.emergency || '—'}`,
-    ].join('\n'))
-
-    if (p.hpi) addSection('Chief Complaint (HPI)', p.hpi)
-    if (p.chronicMeds) addSection('Chronic Medications', p.chronicMeds)
-    if (p.drugAllergies) addSection('Drug Allergies', p.drugAllergies)
-    if (p.socialHistory) addSection('Social History', p.socialHistory)
-    if (p.surgicalHistory) addSection('Surgical History', p.surgicalHistory)
-    if (p.pmh?.length) addSection('Past Medical History', p.pmh.map(m => `• ${m}`).join('\n'))
-    if (p.fh?.length) addSection('Family History', p.fh.map(f => `• ${f}`).join('\n'))
-
-    const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
-    if (rosItems.length) addSection('Review of Systems', rosItems.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n'))
-
-    if (p.records?.length) {
-      p.records.forEach((r, i) => {
-        if (y > 250) { docPdf.addPage(); y = 20 }
-        docPdf.setFillColor(100, 150, 200)
-        docPdf.roundedRect(margin, y - 2, contentW, 8, 1, 1, 'F')
-        docPdf.setTextColor(255, 255, 255)
-        docPdf.setFontSize(12)
-        docPdf.setFont('helvetica', 'bold')
-        docPdf.text(`Record #${i + 1} - ${r.date || '—'}`, pageW - margin, y + 2, { align: 'right' })
-        docPdf.setTextColor(0, 0, 0)
-        y += 10
-        if (r.primaryDx) addText(`Diagnosis: ${r.primaryDx}`, 10, true)
-        if (r.chiefComplaint) addText(`Complaint: ${r.chiefComplaint}`, 10)
-        if (r.treatmentPlan) addText(`Treatment: ${r.treatmentPlan}`, 10)
-        if (r.followUp) addText(`Follow-up: ${r.followUp}`, 10)
-        if (r.investigations) addText(`Investigations: ${r.investigations}`, 10)
-        if (r.invImages?.length) r.invImages.forEach((img, j) => addImageToPdf(img, `Investigation Image (${i + 1}.${j + 1})`))
-        if (r.imgImages?.length) r.imgImages.forEach((img, j) => addImageToPdf(img, `Imaging (${i + 1}.${j + 1})`))
-        y += 3
-      })
-    }
-
-    if (p.exams?.length) {
-      addSection('Lab Results', p.exams.map(e => `${e.name}: ${e.result || '—'} (normal: ${e.normalRange || '—'})`).join('\n'))
-    }
-    if (p.diseases?.length) {
-      addSection('Diseases', p.diseases.map(d => `• ${d.name} [${d.status}]`).join('\n'))
-    }
-
-    docPdf.save(`patient_${p.name || p.id}.pdf`)
+    pdf.save(`patient_${p.name || patientId}.pdf`)
   } catch (e) {
     console.error('PDF export error:', e)
     alert('حدث خطأ أثناء إنشاء ملف PDF')
@@ -155,7 +96,7 @@ export default function DetailsPage() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => navigate(`/add/${patient.id}`)}>✏️ تعديل</button>
-            <button className="btn btn-sm" style={{ flex: 1, background: 'var(--success)', color: 'white' }} onClick={() => downloadPatientPdf(patient)}>📄 تحميل PDF</button>
+            <button className="btn btn-sm" style={{ flex: 1, background: 'var(--success)', color: 'white' }} onClick={() => downloadPatientPdf(patient, patient.id)}>📄 تحميل PDF</button>
           </div>
         </div>
         <div className="pill-tabs">
@@ -237,6 +178,96 @@ export default function DetailsPage() {
             </div>
           ))}
           {!patient.diseases?.length && <EmptyState icon="💊" text="لا توجد بيانات علاجية" />}
+        </div>}
+      </div>
+
+      {/* Hidden PDF export area */}
+      <div id="pdf-export-area" style={{ position: 'absolute', left: '-9999px', top: 0, width: 800, background: 'white', padding: 30, fontFamily: 'Arial, sans-serif', direction: 'rtl' }}>
+        <div style={{ background: '#29417a', color: 'white', padding: '16px 24px', borderRadius: 10, marginBottom: 20, textAlign: 'center' }}>
+          <h1 style={{ margin: 0, fontSize: 24 }}>سجل المريض: {patient.name}</h1>
+          <p style={{ margin: '6px 0 0', fontSize: 13, opacity: 0.9 }}>تاريخ التصدير: {new Date().toLocaleDateString('ar-EG')}</p>
+        </div>
+
+        <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 10px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>البيانات الشخصية</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 14 }}>
+            <div><strong>الاسم:</strong> {patient.name}</div>
+            <div><strong>العمر:</strong> {patient.age} سنة</div>
+            <div><strong>الجنس:</strong> {patient.gender}</div>
+            <div><strong>الهاتف:</strong> {patient.phone}</div>
+            <div><strong>العنوان:</strong> {patient.address || '—'}</div>
+            <div><strong>فصيلة الدم:</strong> {patient.bloodType || '—'}</div>
+            <div><strong>المهنة:</strong> {patient.occupation || '—'}</div>
+            <div><strong>رقم الطوارئ:</strong> {patient.emergency || '—'}</div>
+          </div>
+        </div>
+
+        {patient.hpi && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>الشكوى الرئيسية</h3>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>{patient.hpi}</p>
+        </div>}
+
+        {patient.pmh?.length > 0 && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>التاريخ المرضي السابق</h3>
+          <div style={{ fontSize: 14 }}>{patient.pmh.map((m, i) => <span key={i} style={{ display: 'inline-block', background: 'white', padding: '3px 10px', borderRadius: 6, margin: 3, border: '1px solid #ddd' }}>{m}</span>)}</div>
+        </div>}
+
+        {patient.ros && Object.keys(patient.ros || {}).filter(k => patient.ros[k]?.length).length > 0 && (
+          <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+            <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>مراجعة الأجهزة</h3>
+            {Object.keys(rosLabels).filter(k => patient.ros[k]?.length).map(k => (
+              <div key={k} style={{ marginBottom: 4, fontSize: 13 }}>
+                <strong>{rosLabels[k]}:</strong> {(Array.isArray(patient.ros[k]) ? patient.ros[k] : [patient.ros[k]]).join(' · ')}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {patient.chronicMeds && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>الأدوية المزمنة</h3>
+          <p style={{ margin: 0, fontSize: 14 }}>{patient.chronicMeds}</p>
+        </div>}
+
+        {patient.drugAllergies && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>الحساسية الدوائية</h3>
+          <p style={{ margin: 0, fontSize: 14 }}>{patient.drugAllergies}</p>
+        </div>}
+
+        {patient.records?.map((rec, i) => (
+          <div key={i} style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16, borderRight: '4px solid #29417a' }}>
+            <h3 style={{ margin: '0 0 8px', color: '#29417a' }}>السجل #{i + 1} — {rec.date}</h3>
+            {rec.primaryDx && <div style={{ background: '#29417a', color: 'white', padding: '4px 12px', borderRadius: 6, display: 'inline-block', marginBottom: 6, fontSize: 13 }}>التشخيص: {rec.primaryDx}</div>}
+            {rec.chiefComplaint && <p style={{ margin: '4px 0', fontSize: 13 }}><strong>الشكوى:</strong> {rec.chiefComplaint}</p>}
+            {rec.treatmentPlan && <p style={{ margin: '4px 0', fontSize: 13 }}><strong>خطة العلاج:</strong> {rec.treatmentPlan}</p>}
+            {rec.followUp && <p style={{ margin: '4px 0', fontSize: 13 }}><strong>المتابعة:</strong> {rec.followUp}</p>}
+            {rec.investigations && <p style={{ margin: '4px 0', fontSize: 13 }}><strong>الفحوصات:</strong> {rec.investigations}</p>}
+            {rec.invImages?.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <strong style={{ fontSize: 12 }}>صور الفحوصات:</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                  {rec.invImages.map((img, j) => <img key={j} src={img} alt="" style={{ width: 180, height: 120, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />)}
+                </div>
+              </div>
+            )}
+            {rec.imgImages?.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <strong style={{ fontSize: 12 }}>الأشعة:</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                  {rec.imgImages.map((img, j) => <img key={j} src={img} alt="" style={{ width: 180, height: 120, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />)}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {patient.exams?.length > 0 && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>الفحوصات المخبرية</h3>
+          {patient.exams.map((e, i) => <div key={i} style={{ marginBottom: 4, fontSize: 13 }}><strong>{e.name}:</strong> {e.result || '—'} (طبيعي: {e.normalRange || '—'})</div>)}
+        </div>}
+
+        {patient.diseases?.length > 0 && <div style={{ background: '#f8f9fb', padding: 16, borderRadius: 10, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 8px', color: '#29417a', borderBottom: '2px solid #29417a', paddingBottom: 6 }}>الأمراض</h3>
+          {patient.diseases.map((d, i) => <div key={i} style={{ marginBottom: 4, fontSize: 14 }}>• {d.name} <span style={{ color: d.status === 'نشط' ? 'red' : 'green', fontWeight: 600 }}>[{d.status}]</span></div>)}
         </div>}
       </div>
     </div>

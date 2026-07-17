@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore'
 import { sectionLabels } from '../constants'
 import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
 
@@ -97,123 +98,71 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const downloadPatient = async (p) => {
     try {
-      const docPdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
-      const pageW = 210
-      const margin = 15
-      const contentW = pageW - margin * 2
-      let y = 20
+      const tempDiv = document.createElement('div')
+      tempDiv.style.cssText = 'position:absolute;left:-9999px;top:0;width:800;background:white;padding:30px;font-family:Arial,sans-serif;direction:rtl;'
+      tempDiv.innerHTML = `
+        <div style="background:#29417a;color:white;padding:16px 24px;border-radius:10px;margin-bottom:20px;text-align:center">
+          <h1 style="margin:0;font-size:24px">سجل المريض: ${p.name || '—'}</h1>
+          <p style="margin:6px 0 0;font-size:13px;opacity:0.9">تاريخ التصدير: ${new Date().toLocaleDateString('ar-EG')}</p>
+        </div>
+        <div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px">
+          <h3 style="margin:0 0 10px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">البيانات الشخصية</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:14px">
+            <div><strong>الاسم:</strong> ${p.name || '—'}</div>
+            <div><strong>العمر:</strong> ${p.age || '—'} سنة</div>
+            <div><strong>الجنس:</strong> ${p.gender || '—'}</div>
+            <div><strong>الهاتف:</strong> ${p.phone || '—'}</div>
+            <div><strong>العنوان:</strong> ${p.address || '—'}</div>
+            <div><strong>فصيلة الدم:</strong> ${p.bloodType || '—'}</div>
+            <div><strong>المهنة:</strong> ${p.occupation || '—'}</div>
+            <div><strong>رقم الطوارئ:</strong> ${p.emergency || '—'}</div>
+          </div>
+        </div>
+        ${p.hpi ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الشكوى الرئيسية</h3><p style="margin:0;font-size:14px;line-height:1.7">${p.hpi}</p></div>` : ''}
+        ${p.pmh?.length ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">التاريخ المرضي السابق</h3><div style="font-size:14px">${p.pmh.map(m => `<span style="display:inline-block;background:white;padding:3px 10px;border-radius:6px;margin:3px;border:1px solid #ddd">${m}</span>`).join('')}</div></div>` : ''}
+        ${p.chronicMeds ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الأدوية المزمنة</h3><p style="margin:0;font-size:14px">${p.chronicMeds}</p></div>` : ''}
+        ${p.drugAllergies ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الحساسية الدوائية</h3><p style="margin:0;font-size:14px">${p.drugAllergies}</p></div>` : ''}
+        ${(p.records || []).map((rec, i) => `
+          <div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px;border-right:4px solid #29417a">
+            <h3 style="margin:0 0 8px;color:#29417a">السجل #${i + 1} — ${rec.date || '—'}</h3>
+            ${rec.primaryDx ? `<div style="background:#29417a;color:white;padding:4px 12px;border-radius:6px;display:inline-block;margin-bottom:6px;font-size:13px">التشخيص: ${rec.primaryDx}</div>` : ''}
+            ${rec.chiefComplaint ? `<p style="margin:4px 0;font-size:13px"><strong>الشكوى:</strong> ${rec.chiefComplaint}</p>` : ''}
+            ${rec.treatmentPlan ? `<p style="margin:4px 0;font-size:13px"><strong>خطة العلاج:</strong> ${rec.treatmentPlan}</p>` : ''}
+            ${rec.followUp ? `<p style="margin:4px 0;font-size:13px"><strong>المتابعة:</strong> ${rec.followUp}</p>` : ''}
+            ${(rec.invImages || []).length ? `<div style="margin-top:8px"><strong style="font-size:12px">صور الفحوصات:</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${rec.invImages.map(img => `<img src="${img}" style="width:180px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #ddd"/>`).join('')}</div></div>` : ''}
+          </div>
+        `).join('')}
+        ${(p.exams || []).length ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الفحوصات المخبرية</h3>${p.exams.map(e => `<div style="margin-bottom:4px;font-size:13px"><strong>${e.name}:</strong> ${e.result || '—'} (طبيعي: ${e.normalRange || '—'})</div>`).join('')}</div>` : ''}
+        ${(p.diseases || []).length ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الأمراض</h3>${p.diseases.map(d => `<div style="margin-bottom:4px;font-size:14px">• ${d.name} <span style="color:${d.status === 'نشط' ? 'red' : 'green'};font-weight:600">[${d.status}]</span></div>`).join('')}</div>` : ''}
+      `
+      document.body.appendChild(tempDiv)
 
-      const addText = (text, size = 11, isBold = false) => {
-        if (!text) return
-        docPdf.setFontSize(size)
-        docPdf.setFont('helvetica', isBold ? 'bold' : 'normal')
-        const lines = docPdf.splitTextToSize(String(text), contentW)
-        lines.forEach(line => {
-          if (y > 275) { docPdf.addPage(); y = 20 }
-          docPdf.text(line, pageW - margin, y, { align: 'right' })
-          y += size * 0.5
-        })
+      const canvas = await html2canvas(tempDiv, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false })
+      document.body.removeChild(tempDiv)
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.85)
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pageW = pdf.internal.pageSize.getWidth()
+      const contentW = pageW - 10
+      const imgH = (canvas.height * contentW) / canvas.width
+      const sliceH = pdf.internal.pageSize.getHeight() - 10
+
+      let srcY = 0
+      let first = true
+      while (srcY < canvas.height) {
+        if (!first) pdf.addPage()
+        first = false
+        const tempCanvas = document.createElement('canvas')
+        tempCanvas.width = canvas.width
+        tempCanvas.height = Math.min(sliceH * (canvas.width / contentW), canvas.height - srcY)
+        const ctx = tempCanvas.getContext('2d')
+        ctx.drawImage(canvas, 0, srcY, canvas.width, tempCanvas.height, 0, 0, canvas.width, tempCanvas.height)
+        const sliceImgH = (tempCanvas.height * contentW) / canvas.width
+        pdf.addImage(tempCanvas.toDataURL('image/jpeg', 0.85), 'JPEG', 5, 5, contentW, sliceImgH)
+        srcY += tempCanvas.height
       }
 
-      const addSection = (title, content) => {
-        if (!content) return
-        if (y > 260) { docPdf.addPage(); y = 20 }
-        docPdf.setFillColor(41, 65, 122)
-        docPdf.roundedRect(margin, y - 4, contentW, 8, 1, 1, 'F')
-        docPdf.setTextColor(255, 255, 255)
-        docPdf.setFontSize(11)
-        docPdf.setFont('helvetica', 'bold')
-        docPdf.text(title, pageW - margin, y + 1, { align: 'right' })
-        docPdf.setTextColor(0, 0, 0)
-        y += 10
-        addText(content)
-        y += 3
-      }
-
-      const addImageToPdf = (base64, title) => {
-        if (!base64) return
-        try {
-          if (y > 200) { docPdf.addPage(); y = 20 }
-          docPdf.setFillColor(240, 240, 240)
-          docPdf.roundedRect(margin, y - 2, contentW, 6, 1, 1, 'F')
-          docPdf.setFontSize(9)
-          docPdf.setFont('helvetica', 'bold')
-          docPdf.text(title, pageW - margin, y + 2, { align: 'right' })
-          y += 8
-          const imgW = contentW
-          const imgH = imgW * 0.6
-          if (y + imgH > 275) { docPdf.addPage(); y = 20 }
-          docPdf.addImage(base64, 'JPEG', margin, y, imgW, imgH)
-          y += imgH + 5
-        } catch (e) { console.warn('Image skip:', e) }
-      }
-
-      // Title
-      docPdf.setFillColor(41, 65, 122)
-      docPdf.rect(0, 0, pageW, 35, 'F')
-      docPdf.setTextColor(255, 255, 255)
-      docPdf.setFontSize(20)
-      docPdf.setFont('helvetica', 'bold')
-      docPdf.text(`Patient: ${p.name || '—'}`, pageW - margin, 18, { align: 'right' })
-      docPdf.setFontSize(10)
-      docPdf.text(`Export: ${new Date().toLocaleDateString('en-US')}`, pageW - margin, 28, { align: 'right' })
-      docPdf.setTextColor(0, 0, 0)
-      y = 42
-
-      // Personal Info
-      addSection('Personal Information', [
-        `Name: ${p.name}`,
-        `Age: ${p.age} years`,
-        `Gender: ${p.gender}`,
-        `Phone: ${p.phone}`,
-        `Address: ${p.address || '—'}`,
-        `Blood Type: ${p.bloodType || '—'}`,
-        `Occupation: ${p.occupation || '—'}`,
-        `Emergency: ${p.emergency || '—'}`,
-      ].join('\n'))
-
-      if (p.hpi) addSection('Chief Complaint (HPI)', p.hpi)
-      if (p.chronicMeds) addSection('Chronic Medications', p.chronicMeds)
-      if (p.drugAllergies) addSection('Drug Allergies', p.drugAllergies)
-      if (p.socialHistory) addSection('Social History', p.socialHistory)
-      if (p.surgicalHistory) addSection('Surgical History', p.surgicalHistory)
-      if (p.pmh?.length) addSection('Past Medical History', p.pmh.map(m => `• ${m}`).join('\n'))
-      if (p.fh?.length) addSection('Family History', p.fh.map(f => `• ${f}`).join('\n'))
-
-      const rosItems = Object.entries(p.ros || {}).filter(([, v]) => v?.length)
-      if (rosItems.length) {
-        addSection('Review of Systems', rosItems.map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n'))
-      }
-
-      // Records
-      if (p.records?.length) {
-        p.records.forEach((r, i) => {
-          if (y > 250) { docPdf.addPage(); y = 20 }
-          docPdf.setFillColor(100, 150, 200)
-          docPdf.roundedRect(margin, y - 2, contentW, 8, 1, 1, 'F')
-          docPdf.setTextColor(255, 255, 255)
-          docPdf.setFontSize(12)
-          docPdf.setFont('helvetica', 'bold')
-          docPdf.text(`Record #${i + 1} - ${r.date || '—'}`, pageW - margin, y + 2, { align: 'right' })
-          docPdf.setTextColor(0, 0, 0)
-          y += 10
-
-          if (r.primaryDx) addText(`Diagnosis: ${r.primaryDx}`, 10, true)
-          if (r.chiefComplaint) addText(`Complaint: ${r.chiefComplaint}`, 10)
-          if (r.treatmentPlan) addText(`Treatment: ${r.treatmentPlan}`, 10)
-          if (r.followUp) addText(`Follow-up: ${r.followUp}`, 10)
-
-          // Investigation images
-          if (r.invImages?.length) {
-            for (const img of r.invImages) {
-              addImageToPdf(img, `Investigation Image (${i + 1})`)
-            }
-          }
-          y += 3
-        })
-      }
-
-      docPdf.save(`patient_${p.name || p.id}.pdf`)
+      pdf.save(`patient_${p.name || p.id}.pdf`)
     } catch (e) {
       console.error('PDF export error:', e)
       alert('حدث خطأ أثناء إنشاء ملف PDF')
