@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { db } from '../firebase'
 import { collection, addDoc, query, where, onSnapshot, orderBy, doc, updateDoc, arrayUnion } from 'firebase/firestore'
+import { complaintLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
 
 export default function ComplaintPage({ user }) {
   const [text, setText] = useState('')
@@ -33,6 +34,13 @@ export default function ComplaintPage({ user }) {
 
   const send = async () => {
     if (!text.trim()) return
+    const deviceId = getDeviceId()
+    const rate = checkRateLimit(complaintLimiter, deviceId)
+    if (!rate.allowed) {
+      setToast(rateLimitToast(rate.wait))
+      setTimeout(() => setToast(''), 3000)
+      return
+    }
     setSending(true)
     try {
       await addDoc(collection(db, 'complaints'), {

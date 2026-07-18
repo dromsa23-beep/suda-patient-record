@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
 import { EditAccordion, EditableRow, Lightbox, ImageGrid } from './shared'
+import { patientLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
 
 export default function AddPage({ user }) {
   const navigate = useNavigate()
@@ -121,6 +122,12 @@ export default function AddPage({ user }) {
   }, [id])
 
   const save = async () => {
+    const deviceId = getDeviceId()
+    const rate = checkRateLimit(patientLimiter, deviceId)
+    if (!rate.allowed) {
+      alert(rateLimitToast(rate.wait))
+      return
+    }
     try {
       const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown', userId: user?.id || user?.username || 'unknown' }
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]

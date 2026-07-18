@@ -4,6 +4,7 @@ import { specialtyList } from '../constants'
 import { db } from '../firebase'
 import { collection, getDocs } from 'firebase/firestore'
 import { auth } from '../api'
+import { loginLimiter, registerLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
 
 export default function LoginPage({ onLogin, onRegister }) {
   const [tab, setTab] = useState('login')
@@ -12,6 +13,7 @@ export default function LoginPage({ onLogin, onRegister }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [registered, setRegistered] = useState(false)
+  const [rateLimitMsg, setRateLimitMsg] = useState('')
   const navigate = useNavigate()
   const set = (k, v) => tab === 'login' ? setCreds({ ...creds, [k]: v }) : setForm({ ...form, [k]: v })
 
@@ -19,7 +21,14 @@ export default function LoginPage({ onLogin, onRegister }) {
 
   const doLogin = async () => {
     setError('')
+    setRateLimitMsg('')
     if (!creds.username || !creds.password) { setError('أدخل اسم المستخدم وكلمة المرور'); return }
+    const deviceId = getDeviceId()
+    const rate = checkRateLimit(loginLimiter, deviceId)
+    if (!rate.allowed) {
+      setRateLimitMsg(rateLimitToast(rate.wait))
+      return
+    }
     try {
       const snap = await getDocs(collection(db, 'admins'))
       const found = snap.docs.find(d => {
@@ -40,9 +49,16 @@ export default function LoginPage({ onLogin, onRegister }) {
 
   const doRegister = async () => {
     setError('')
+    setRateLimitMsg('')
     if (!form.name || !form.username || !form.password) { setError('أكمل جميع الحقول المطلوبة'); return }
     if (form.password !== form.confirm) { setError('كلمة السر غير متطابقة'); return }
     if (form.password.length < 6) { setError('كلمة السر 6 أحرف على الأقل'); return }
+    const deviceId = getDeviceId()
+    const rate = checkRateLimit(registerLimiter, deviceId)
+    if (!rate.allowed) {
+      setRateLimitMsg(rateLimitToast(rate.wait))
+      return
+    }
     setLoading(true)
     try {
       await onRegister(form)
@@ -67,6 +83,7 @@ export default function LoginPage({ onLogin, onRegister }) {
           <button onClick={() => { setTab('register'); setError('') }} className={`pill-tab ${tab === 'register' ? 'active' : ''}`} style={{ flex: 1, borderRadius: 8 }}>📝 حساب جديد</button>
         </div>
         {error && <div style={{ background: '#fde8e8', color: 'var(--danger)', padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{error}</div>}
+        {rateLimitMsg && <div style={{ background: '#fff3cd', color: '#856404', padding: '8px 12px', borderRadius: 8, marginBottom: 12, fontSize: 13, textAlign: 'center' }}>{rateLimitMsg}</div>}
         {registered && <div style={{ background: '#e8fde8', color: 'var(--success)', padding: '12px', borderRadius: 8, marginBottom: 12, fontSize: 13, textAlign: 'center', lineHeight: 1.8 }}>
           <div style={{ fontSize: 24, marginBottom: 8 }}>✅</div>
           <div style={{ fontWeight: 700, fontSize: 14 }}>تم إرسال بياناتك للإدارة للموافقة عليها</div>

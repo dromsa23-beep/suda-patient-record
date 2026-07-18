@@ -7,6 +7,7 @@ import {
 import { sectionLabels } from '../constants'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
+import { adminLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
 
@@ -246,6 +247,8 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const addComplaint = async () => {
     if (!newComplaint.trim()) return showToast('اكتب الشكوى أولاً')
+    const rate = checkRateLimit(adminLimiter, getDeviceId())
+    if (!rate.allowed) return showToast(rateLimitToast(rate.wait))
     await addDoc(collection(db, 'complaints'), { text: newComplaint.trim(), by: 'مستفيد', date: new Date().toISOString(), status: 'جديد' })
     setNewComplaint('')
     await loadData()
@@ -261,6 +264,8 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const replyToComplaint = async (id) => {
     const text = replyText[id]?.trim()
     if (!text) return
+    const rate = checkRateLimit(adminLimiter, getDeviceId())
+    if (!rate.allowed) return showToast(rateLimitToast(rate.wait))
     await updateDoc(doc(db, 'complaints', id), {
       adminReply: text,
       replyDate: new Date().toISOString(),
