@@ -8,6 +8,18 @@ import { sectionLabels } from '../constants'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { adminLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
+import { sanitize, sanitizeForInnerHtml } from '../sanitizer'
+
+async function retryFirestore(fn, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn() } catch (err) {
+      if (i === retries - 1) throw err
+      const retryable = err?.code === 'unavailable' || err?.code === 'resource-exhausted' || err?.code === 'deadline-exceeded' || err?.message?.includes('upstream') || err?.message?.includes('503')
+      if (!retryable) throw err
+      await new Promise(r => setTimeout(r, delay * Math.pow(2, i)))
+    }
+  }
+}
 
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }
 
@@ -217,7 +229,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     if (!newAdmin.username.trim() || !newAdmin.password.trim() || !newAdmin.name.trim()) return showToast('أكمل جميع الحقول')
     const exists = admins.find(a => a.username === newAdmin.username)
     if (exists) return showToast('اسم المستخدم موجود بالفعل')
-    await addDoc(collection(db, 'admins'), { ...newAdmin, role: 'admin', createdAt: new Date().toISOString() })
+    await retryFirestore(() => addDoc(collection(db, 'admins'), { ...newAdmin, role: 'admin', createdAt: new Date().toISOString() }))
     setNewAdmin({ username: '', password: '', name: '', clinic: '' })
     setShowAddAdmin(false)
     await loadData()
@@ -226,13 +238,13 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const removeAdmin = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذا المشرف؟')) return
-    await deleteDoc(doc(db, 'admins', id))
+    await retryFirestore(() => deleteDoc(doc(db, 'admins', id)))
     showToast('تم حذف المشرف')
   }
 
   const changeAdminPassword = async (id) => {
     if (!editPassword || editPassword.length < 6) return showToast('كلمة المرور 6 أحرف على الأقل')
-    await updateDoc(doc(db, 'admins', id), { password: editPassword })
+    await retryFirestore(() => updateDoc(doc(db, 'admins', id), { password: editPassword }))
     setEditingAdmin(null)
     setEditPassword('')
     showToast('تم تغيير كلمة المرور')
@@ -240,7 +252,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const removeUser = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذا المستخدم؟')) return
-    await deleteDoc(doc(db, 'users', id))
+    await retryFirestore(() => deleteDoc(doc(db, 'users', id)))
     await loadData()
     showToast('تم حذف المستخدم')
   }
@@ -249,14 +261,14 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     if (!newComplaint.trim()) return showToast('اكتب الشكوى أولاً')
     const rate = checkRateLimit(adminLimiter, getDeviceId())
     if (!rate.allowed) return showToast(rateLimitToast(rate.wait))
-    await addDoc(collection(db, 'complaints'), { text: newComplaint.trim(), by: 'مستفيد', date: new Date().toISOString(), status: 'جديد' })
+    await retryFirestore(() => addDoc(collection(db, 'complaints'), { text: newComplaint.trim(), by: 'مستفيد', date: new Date().toISOString(), status: 'جديد' }))
     setNewComplaint('')
     await loadData()
     showToast('تم إرسال الشكوى')
   }
 
   const resolveComplaint = async (id) => {
-    await updateDoc(doc(db, 'complaints', id), { status: 'تم الحل', resolvedDate: new Date().toISOString() })
+    await retryFirestore(() => updateDoc(doc(db, 'complaints', id), { status: 'تم الحل', resolvedDate: new Date().toISOString() }))
     await loadData()
     showToast('تم إغلاق الشكوى')
   }
@@ -266,11 +278,11 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     if (!text) return
     const rate = checkRateLimit(adminLimiter, getDeviceId())
     if (!rate.allowed) return showToast(rateLimitToast(rate.wait))
-    await updateDoc(doc(db, 'complaints', id), {
+    await retryFirestore(() => updateDoc(doc(db, 'complaints', id), {
       adminReply: text,
       replyDate: new Date().toISOString(),
       status: 'بانتظار رد المستخدم'
-    })
+    }))
     setReplyText({ ...replyText, [id]: '' })
     await loadData()
     showToast('تم إرسال الرد')
@@ -278,20 +290,20 @@ function AdminDashboard({ admin, onLogout, onBack }) {
 
   const deletePatient = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذا المريض؟')) return
-    await deleteDoc(doc(db, 'patients', id))
+    await retryFirestore(() => deleteDoc(doc(db, 'patients', id)))
     await loadData()
     showToast('تم حذف المريض')
   }
 
   const approveUser = async (id) => {
-    await updateDoc(doc(db, 'users', id), { approved: true })
+    await retryFirestore(() => updateDoc(doc(db, 'users', id), { approved: true }))
     await loadData()
     showToast('تمت الموافقة على المستخدم')
   }
 
   const rejectUser = async (id) => {
     if (!confirm('هل تريد رفض هذا الطلب وحذفه؟')) return
-    await deleteDoc(doc(db, 'users', id))
+    await retryFirestore(() => deleteDoc(doc(db, 'users', id)))
     await loadData()
     showToast('تم رفض الطلب')
   }
@@ -304,13 +316,13 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     const base = currentEnd > now ? currentEnd : now
     const newEnd = new Date(base)
     newEnd.setMonth(newEnd.getMonth() + months)
-    await updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() })
+    await retryFirestore(() => updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() }))
     await loadData()
     showToast(`تم تمديد الاشتراك ${months} شهر`)
   }
 
   const freezeUser = async (id) => {
-    await updateDoc(doc(db, 'users', id), { subscriptionEnd: new Date().toISOString() })
+    await retryFirestore(() => updateDoc(doc(db, 'users', id), { subscriptionEnd: new Date().toISOString() }))
     await loadData()
     showToast('تم تجميد الحساب')
   }
@@ -319,7 +331,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
     const now = new Date()
     const newEnd = new Date(now)
     newEnd.setMonth(newEnd.getMonth() + months)
-    await updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() })
+    await retryFirestore(() => updateDoc(doc(db, 'users', id), { subscriptionEnd: newEnd.toISOString() }))
     await loadData()
     showToast('تم تفعيل الحساب')
   }

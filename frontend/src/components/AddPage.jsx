@@ -4,6 +4,7 @@ import { patients as patientsApi } from '../api'
 import { emptyPatient, pmhOptions, fhOptions, rosSystemOptions, rosLabels, bloodTypes, genders, sectionLabels, defaultSectionOrder, socratesPlaceholder, imagingTypes } from '../constants'
 import { EditAccordion, EditableRow, Lightbox, ImageGrid } from './shared'
 import { patientLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
+import { sanitize, sanitizeObject } from '../sanitizer'
 
 export default function AddPage({ user }) {
   const navigate = useNavigate()
@@ -129,7 +130,8 @@ export default function AddPage({ user }) {
       return
     }
     try {
-      const data = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown', userId: user?.id || user?.username || 'unknown' }
+      const rawData = { ...fRef.current, records: recordsRef.current, createdBy: user?.username || 'unknown', userId: user?.id || user?.username || 'unknown' }
+      const data = sanitizeObject(rawData)
       if (!data.records?.length) data.records = [{ date: new Date().toISOString().slice(0, 10) }]
       const jsonSize = new TextEncoder().encode(JSON.stringify(data)).length
       if (jsonSize > 900000) {

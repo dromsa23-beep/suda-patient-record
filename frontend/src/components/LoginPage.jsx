@@ -3,8 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { specialtyList } from '../constants'
 import { db } from '../firebase'
 import { collection, getDocs } from 'firebase/firestore'
+
+async function retryFirestore(fn, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn() } catch (err) {
+      if (i === retries - 1) throw err
+      const retryable = err?.code === 'unavailable' || err?.code === 'resource-exhausted' || err?.code === 'deadline-exceeded' || err?.message?.includes('upstream') || err?.message?.includes('503')
+      if (!retryable) throw err
+      await new Promise(r => setTimeout(r, delay * Math.pow(2, i)))
+    }
+  }
+}
 import { auth } from '../api'
 import { loginLimiter, registerLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
+import { sanitize } from '../sanitizer'
 
 export default function LoginPage({ onLogin, onRegister }) {
   const [tab, setTab] = useState('login')
@@ -33,7 +45,7 @@ export default function LoginPage({ onLogin, onRegister }) {
       const snap = await getDocs(collection(db, 'admins'))
       const found = snap.docs.find(d => {
         const a = d.data()
-        return a.username === creds.username && a.password === creds.password
+        return a.username === sanitize(creds.username) && a.password === creds.password
       })
       if (found) {
         const a = found.data()
@@ -41,7 +53,7 @@ export default function LoginPage({ onLogin, onRegister }) {
         navigate('/admin')
         return
       }
-      await onLogin(creds.username, creds.password)
+      await onLogin(sanitize(creds.username), creds.password)
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'خطأ في البيانات')
     }
@@ -61,7 +73,8 @@ export default function LoginPage({ onLogin, onRegister }) {
     }
     setLoading(true)
     try {
-      await onRegister(form)
+      const sanitized = { ...form, name: sanitize(form.name), username: sanitize(form.username), clinic: sanitize(form.clinic), phone: sanitize(form.phone), email: sanitize(form.email) }
+      await onRegister(sanitized)
       setRegistered(true)
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'خطأ في التسجيل')

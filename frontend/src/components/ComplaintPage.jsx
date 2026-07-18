@@ -2,6 +2,18 @@ import { useState, useEffect, useRef } from 'react'
 import { db } from '../firebase'
 import { collection, addDoc, query, where, onSnapshot, orderBy, doc, updateDoc, arrayUnion } from 'firebase/firestore'
 import { complaintLimiter, checkRateLimit, getDeviceId, rateLimitToast } from '../rateLimiter'
+import { sanitize } from '../sanitizer'
+
+async function retryFirestore(fn, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try { return await fn() } catch (err) {
+      if (i === retries - 1) throw err
+      const retryable = err?.code === 'unavailable' || err?.code === 'resource-exhausted' || err?.code === 'deadline-exceeded' || err?.message?.includes('upstream') || err?.message?.includes('503')
+      if (!retryable) throw err
+      await new Promise(r => setTimeout(r, delay * Math.pow(2, i)))
+    }
+  }
+}
 
 export default function ComplaintPage({ user }) {
   const [text, setText] = useState('')
@@ -43,18 +55,18 @@ export default function ComplaintPage({ user }) {
     }
     setSending(true)
     try {
-      await addDoc(collection(db, 'complaints'), {
-        text: text.trim(),
+      await retryFirestore(() => addDoc(collection(db, 'complaints'), {
+        text: sanitize(text.trim()),
         by: user.username || 'مستخدم',
         date: new Date().toISOString(),
         status: 'جديد',
         messages: [{
           sender: 'user',
           senderName: user.name || user.username,
-          text: text.trim(),
+          text: sanitize(text.trim()),
           date: new Date().toISOString()
         }]
-      })
+      }))
       setText('')
       setToast('تم إرسال شكواك بنجاح')
       setTimeout(() => setToast(''), 3000)
@@ -69,15 +81,15 @@ export default function ComplaintPage({ user }) {
   const replyToAdmin = async (complaintId) => {
     const msg = replyText[complaintId]?.trim()
     if (!msg) return
-    await updateDoc(doc(db, 'complaints', complaintId), {
+    await retryFirestore(() => updateDoc(doc(db, 'complaints', complaintId), {
       messages: arrayUnion({
         sender: 'user',
         senderName: user.name || user.username,
-        text: msg,
+        text: sanitize(msg),
         date: new Date().toISOString()
       }),
       status: 'جديد'
-    })
+    }))
     setReplyText({ ...replyText, [complaintId]: '' })
   }
 

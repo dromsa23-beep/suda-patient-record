@@ -64,10 +64,28 @@ export default function DetailsPage() {
   const [patient, setPatient] = useState(null)
   const [tab, setTab] = useState('history')
   const [lightbox, setLightbox] = useState({ images: [], index: null })
+  const [error, setError] = useState(null)
   const navigate = useNavigate()
   const { id } = useParams()
-  useEffect(() => { patientsApi.get(id).then(r => setPatient(r.data)).catch(() => navigate('/search')) }, [id])
-  if (!patient) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)' }} className="pulse-loading">جاري التحميل...</div>
+  useEffect(() => {
+    let cancelled = false
+    patientsApi.get(id).then(r => {
+      if (!cancelled) setPatient(r.data)
+    }).catch(e => {
+      console.error('Patient load error:', e)
+      if (!cancelled) setError(true)
+    })
+    return () => { cancelled = true }
+  }, [id])
+  if (error) return <div style={{ textAlign: 'center', padding: 40 }}>
+    <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+    <p style={{ color: 'var(--text-3)', marginBottom: 12 }}>لا يمكن تحميل بيانات المريض</p>
+    <button className="btn btn-primary" onClick={() => navigate('/search')}>العودة للبحث</button>
+  </div>
+  if (!patient) return <div style={{ textAlign: 'center', padding: 60 }}>
+    <div className="pulse-loading" style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+    <p style={{ color: 'var(--text-3)' }}>جاري تحميل بيانات المريض...</p>
+  </div>
   const r = patient.records?.[patient.records.length - 1]
   const allInvImages = (patient.records || []).flatMap(rec => rec.invImages || [])
   const allImgImages = (patient.records || []).flatMap(rec => rec.imgImages || [])
