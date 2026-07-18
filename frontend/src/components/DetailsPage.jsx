@@ -6,51 +6,58 @@ import { Lightbox, FieldBlock, RecordCard, ImageGrid, EmptyState } from './share
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
+async function withTimeout(promise, ms) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms)
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function downloadPatientPdf(p, patientId) {
   try {
     const pdfRef = document.getElementById('pdf-export-area')
     if (!pdfRef) return
+    pdfRef.style.position = 'absolute'
+    pdfRef.style.left = '0'
+    pdfRef.style.top = '0'
+    pdfRef.style.zIndex = '-1'
+    pdfRef.style.display = 'block'
+    await new Promise(r => setTimeout(r, 200))
 
     const canvas = await html2canvas(pdfRef, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      width: pdfRef.scrollWidth,
-      height: pdfRef.scrollHeight,
+      scale: 2, useCORS: true, allowTaint: true,
+      backgroundColor: '#ffffff', logging: false,
+      width: pdfRef.scrollWidth, height: pdfRef.scrollHeight,
     })
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.85)
+    pdfRef.style.left = '-9999px'
+
     const pdf = new jsPDF('p', 'mm', 'a4')
     const pageW = pdf.internal.pageSize.getWidth()
     const pageH = pdf.internal.pageSize.getHeight()
     const margin = 5
     const contentW = pageW - margin * 2
     const imgH = (canvas.height * contentW) / canvas.width
-
-    let y = margin
-    let remaining = imgH
-    let srcY = 0
     const sliceH = pageH - margin * 2
 
-    while (remaining > 0) {
-      if (y !== margin) pdf.addPage()
-
+    let srcY = 0
+    let first = true
+    while (srcY < canvas.height) {
+      if (!first) pdf.addPage()
+      first = false
       const tempCanvas = document.createElement('canvas')
       tempCanvas.width = canvas.width
       tempCanvas.height = Math.min(sliceH * (canvas.width / contentW), canvas.height - srcY)
       const ctx = tempCanvas.getContext('2d')
       ctx.drawImage(canvas, 0, srcY, canvas.width, tempCanvas.height, 0, 0, canvas.width, tempCanvas.height)
-
-      const sliceData = tempCanvas.toDataURL('image/jpeg', 0.85)
       const sliceImgH = (tempCanvas.height * contentW) / canvas.width
-
-      pdf.addImage(sliceData, 'JPEG', margin, margin, contentW, sliceImgH)
-
+      pdf.addImage(tempCanvas.toDataURL('image/jpeg', 0.85), 'JPEG', margin, margin, contentW, sliceImgH)
       srcY += tempCanvas.height
-      remaining -= sliceH
-      y = margin
     }
 
     pdf.save(`patient_${p.name || patientId}.pdf`)
@@ -60,31 +67,38 @@ async function downloadPatientPdf(p, patientId) {
   }
 }
 
-export default function DetailsPage() {
+export default function DetailsPage({ user }) {
   const [patient, setPatient] = useState(null)
   const [tab, setTab] = useState('history')
   const [lightbox, setLightbox] = useState({ images: [], index: null })
   const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
   const { id } = useParams()
   useEffect(() => {
     let cancelled = false
-    patientsApi.get(id).then(r => {
-      if (!cancelled) setPatient(r.data)
+    setLoading(true)
+    setError(null)
+    withTimeout(patientsApi.get(id), 15000).then(r => {
+      if (!cancelled) { setPatient(r.data); setLoading(false) }
     }).catch(e => {
       console.error('Patient load error:', e)
-      if (!cancelled) setError(true)
+      if (!cancelled) { setError(e.message === 'timeout' ? 'timeout' : 'error'); setLoading(false) }
     })
     return () => { cancelled = true }
   }, [id])
-  if (error) return <div style={{ textAlign: 'center', padding: 40 }}>
-    <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-    <p style={{ color: 'var(--text-3)', marginBottom: 12 }}>لا يمكن تحميل بيانات المريض</p>
-    <button className="btn btn-primary" onClick={() => navigate('/search')}>العودة للبحث</button>
-  </div>
-  if (!patient) return <div style={{ textAlign: 'center', padding: 60 }}>
+  if (loading) return <div style={{ textAlign: 'center', padding: 60 }}>
     <div className="pulse-loading" style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
     <p style={{ color: 'var(--text-3)' }}>جاري تحميل بيانات المريض...</p>
+  </div>
+  if (error) return <div style={{ textAlign: 'center', padding: 40 }}>
+    <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+    <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>
+      {error === 'timeout' ? 'انتهت مهلة التحميل' : 'لا يمكن تحميل بيانات المريض'}
+    </p>
+    <p style={{ color: 'var(--text-3)', fontSize: 12, marginBottom: 12 }}>تحقق من اتصال الإنترنت وأعد المحاولة</p>
+    <button className="btn btn-primary" onClick={() => { setLoading(true); setError(null); patientsApi.get(id).then(r => { setPatient(r.data); setLoading(false) }).catch(() => { setError('error'); setLoading(false) }) }}>🔄 إعادة المحاولة</button>
+    <button className="btn btn-outline" style={{ marginRight: 8 }} onClick={() => navigate('/search')}>العودة للبحث</button>
   </div>
   const r = patient.records?.[patient.records.length - 1]
   const allInvImages = (patient.records || []).flatMap(rec => rec.invImages || [])
