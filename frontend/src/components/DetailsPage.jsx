@@ -22,9 +22,8 @@ async function downloadPatientPdf(p, patientId) {
   try {
     const pdfRef = document.getElementById('pdf-export-area')
     if (!pdfRef) return
-    pdfRef.style.position = 'absolute'
-    pdfRef.style.left = '0'
-    pdfRef.style.top = '0'
+    pdfRef.style.opacity = '1'
+    pdfRef.style.pointerEvents = 'auto'
     pdfRef.style.zIndex = '-1'
     pdfRef.style.display = 'block'
     await new Promise(r => setTimeout(r, 200))
@@ -35,7 +34,8 @@ async function downloadPatientPdf(p, patientId) {
       width: pdfRef.scrollWidth, height: pdfRef.scrollHeight,
     })
 
-    pdfRef.style.left = '-9999px'
+    pdfRef.style.opacity = '0'
+    pdfRef.style.pointerEvents = 'none'
 
     const pdf = new jsPDF('p', 'mm', 'a4')
     const pageW = pdf.internal.pageSize.getWidth()
@@ -214,7 +214,7 @@ export default function DetailsPage({ user }) {
       </div>
 
       {/* Hidden PDF export area */}
-      <div id="pdf-export-area" style={{ position: 'absolute', left: '-9999px', top: 0, width: 800, background: 'white', padding: 30, fontFamily: 'Arial, sans-serif', direction: 'rtl' }}>
+      <div id="pdf-export-area" style={{ position: 'fixed', top: 0, left: 0, width: 800, opacity: 0, pointerEvents: 'none', zIndex: -1, background: 'white', padding: 30, fontFamily: 'Arial, sans-serif', direction: 'rtl' }}>
         <div style={{ background: '#29417a', color: 'white', padding: '16px 24px', borderRadius: 10, marginBottom: 20, textAlign: 'center' }}>
           <h1 style={{ margin: 0, fontSize: 24 }}>سجل المريض: {patient.name}</h1>
           <p style={{ margin: '6px 0 0', fontSize: 13, opacity: 0.9 }}>تاريخ التصدير: {new Date().toLocaleDateString('ar-EG')}</p>
