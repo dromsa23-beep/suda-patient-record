@@ -113,7 +113,7 @@ function AdminDashboard({ admin, onLogout, onBack }) {
   const downloadPatient = async (p) => {
     try {
       const tempDiv = document.createElement('div')
-      tempDiv.style.cssText = 'position:absolute;left:-9999px;top:0;width:800;background:white;padding:30px;font-family:Arial,sans-serif;direction:rtl;'
+      tempDiv.style.cssText = 'position:fixed;top:0;left:0;width:800;background:white;padding:30px;font-family:Arial,sans-serif;direction:rtl;z-index:99999;'
       tempDiv.innerHTML = `
         <div style="background:#29417a;color:white;padding:16px 24px;border-radius:10px;margin-bottom:20px;text-align:center">
           <h1 style="margin:0;font-size:24px">سجل المريض: ${p.name || '—'}</h1>
@@ -144,12 +144,24 @@ function AdminDashboard({ admin, onLogout, onBack }) {
             ${rec.treatmentPlan ? `<p style="margin:4px 0;font-size:13px"><strong>خطة العلاج:</strong> ${rec.treatmentPlan}</p>` : ''}
             ${rec.followUp ? `<p style="margin:4px 0;font-size:13px"><strong>المتابعة:</strong> ${rec.followUp}</p>` : ''}
             ${(rec.invImages || []).length ? `<div style="margin-top:8px"><strong style="font-size:12px">صور الفحوصات:</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${rec.invImages.map(img => `<img src="${img}" style="width:180px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #ddd"/>`).join('')}</div></div>` : ''}
+            ${(rec.imgImages || []).length ? `<div style="margin-top:8px"><strong style="font-size:12px">الأشعة:</strong><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${rec.imgImages.map(img => `<img src="${img}" style="width:180px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #ddd"/>`).join('')}</div></div>` : ''}
           </div>
         `).join('')}
         ${(p.exams || []).length ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الفحوصات المخبرية</h3>${p.exams.map(e => `<div style="margin-bottom:4px;font-size:13px"><strong>${e.name}:</strong> ${e.result || '—'} (طبيعي: ${e.normalRange || '—'})</div>`).join('')}</div>` : ''}
         ${(p.diseases || []).length ? `<div style="background:#f8f9fb;padding:16px;border-radius:10px;margin-bottom:16px"><h3 style="margin:0 0 8px;color:#29417a;border-bottom:2px solid #29417a;padding-bottom:6px">الأمراض</h3>${p.diseases.map(d => `<div style="margin-bottom:4px;font-size:14px">• ${d.name} <span style="color:${d.status === 'نشط' ? 'red' : 'green'};font-weight:600">[${d.status}]</span></div>`).join('')}</div>` : ''}
       `
       document.body.appendChild(tempDiv)
+
+      const imgs = tempDiv.querySelectorAll('img')
+      await Promise.all(Array.from(imgs).map(img => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve()
+        return new Promise(resolve => {
+          img.onload = resolve
+          img.onerror = resolve
+          setTimeout(resolve, 5000)
+        })
+      }))
+      await new Promise(r => setTimeout(r, 300))
 
       const canvas = await html2canvas(tempDiv, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false })
       document.body.removeChild(tempDiv)

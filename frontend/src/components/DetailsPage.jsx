@@ -22,11 +22,27 @@ async function downloadPatientPdf(p, patientId) {
   try {
     const pdfRef = document.getElementById('pdf-export-area')
     if (!pdfRef) return
+
+    pdfRef.style.position = 'fixed'
+    pdfRef.style.top = '0'
+    pdfRef.style.left = '0'
     pdfRef.style.opacity = '1'
     pdfRef.style.pointerEvents = 'auto'
-    pdfRef.style.zIndex = '-1'
+    pdfRef.style.zIndex = '99999'
     pdfRef.style.display = 'block'
-    await new Promise(r => setTimeout(r, 200))
+    pdfRef.style.overflow = 'visible'
+
+    const imgs = pdfRef.querySelectorAll('img')
+    await Promise.all(Array.from(imgs).map(img => {
+      if (img.complete) return Promise.resolve()
+      return new Promise(resolve => {
+        img.onload = resolve
+        img.onerror = resolve
+        setTimeout(resolve, 5000)
+      })
+    }))
+
+    await new Promise(r => setTimeout(r, 500))
 
     const canvas = await html2canvas(pdfRef, {
       scale: 2, useCORS: true, allowTaint: true,
@@ -36,6 +52,7 @@ async function downloadPatientPdf(p, patientId) {
 
     pdfRef.style.opacity = '0'
     pdfRef.style.pointerEvents = 'none'
+    pdfRef.style.zIndex = '-1'
 
     const pdf = new jsPDF('p', 'mm', 'a4')
     const pageW = pdf.internal.pageSize.getWidth()
